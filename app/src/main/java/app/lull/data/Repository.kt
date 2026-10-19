@@ -13,8 +13,8 @@ class Repository(private val api: InnerTube) {
 
     val isSignedIn: Boolean get() = api.isSignedIn
 
-    suspend fun searchTracks(query: String, continuation: String? = null): Page<Track> =
-        io { api.searchTracks(query, continuation) }
+    suspend fun searchTracks(query: String, continuation: String? = null, filter: SearchFilter = SearchFilter.SONGS): Page<Track> =
+        io { api.searchTracks(query, continuation, filter) }
 
     suspend fun searchCollections(query: String, filter: SearchFilter, continuation: String? = null): Page<MusicCollection> =
         io { api.searchCollections(query, filter, continuation) }

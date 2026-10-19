@@ -33,6 +33,7 @@ data class PlayerUi(
     val index: Int = 0,
     val queue: List<QueueEntry> = emptyList(),
     val source: String? = null,
+    val speed: Float = 1f,
 ) {
     val upcoming: List<QueueEntry> get() = queue.drop(index + 1)
 }
@@ -88,7 +89,16 @@ class PlayerConnection(context: Context, scope: CoroutineScope) {
                 QueueEntry(m.title?.toString().orEmpty(), m.artist?.toString().orEmpty())
             },
             source = source,
+            speed = c.playbackParameters.speed,
         )
+    }
+
+    /** 1× → 1.25× → 1.5× → 1.75× → 2× → 0.75× → 1×. Handy for classes and talks. */
+    fun cycleSpeed() {
+        val c = controller ?: return
+        val current = c.playbackParameters.speed
+        val next = SPEEDS.firstOrNull { it > current + 0.01f } ?: SPEEDS.first()
+        c.setPlaybackSpeed(next)
     }
 
     fun play(tracks: List<Track>, startIndex: Int = 0, from: String? = null) {
@@ -155,5 +165,6 @@ class PlayerConnection(context: Context, scope: CoroutineScope) {
 
     private companion object {
         const val POSITION_REFRESH_MS = 15_000L
+        val SPEEDS = listOf(0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
     }
 }

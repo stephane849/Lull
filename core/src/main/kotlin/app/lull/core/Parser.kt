@@ -15,11 +15,14 @@ import kotlinx.serialization.json.JsonPrimitive
 object Parser {
 
     private val DURATION = Regex("""^\d{1,2}:\d{2}(:\d{2})?$""")
-    private val TYPE_WORDS = setOf("Song", "Video", "Episode", "Single", "EP", "Album", "Playlist", "Artist")
+    private val TYPE_WORDS = setOf("Song", "Video", "Episode", "Single", "EP", "Album", "Playlist", "Artist", "Podcast")
+    private val HOURS = Regex("""(\d+)\s*(hr|hour)""")
+    private val MINUTES = Regex("""(\d+)\s*min""")
+    private val SECONDS = Regex("""(\d+)\s*sec""")
 
     fun tracks(root: JsonElement): List<Track> =
-        findAll(root, "musicResponsiveListItemRenderer")
-            .mapNotNull(::trackFrom)
+        (findAll(root, "musicResponsiveListItemRenderer").mapNotNull(::trackFrom) +
+            findAll(root, "musicMultiRowListItemRenderer").mapNotNull(::episodeFrom))
             .distinctBy { it.videoId }
 
     fun collections(root: JsonElement): List<MusicCollection> =
@@ -45,6 +48,16 @@ object Parser {
         return text.trim().split(':').fold(0) { acc, part -> acc * 60 + part.toInt() }
     }
 
+    /** Podcast-style lengths: "1 hr 2 min", "58 min", "45 sec". */
+    fun parseSpokenDuration(text: String?): Int? {
+        if (text == null) return null
+        val h = HOURS.find(text)?.groupValues?.get(1)?.toInt()
+        val m = MINUTES.find(text)?.groupValues?.get(1)?.toInt()
+        val s = SECONDS.find(text)?.groupValues?.get(1)?.toInt()
+        if (h == null && m == null && s == null) return null
+        return (h ?: 0) * 3600 + (m ?: 0) * 60 + (s ?: 0)
+    }
+
     // --- renderers ---------------------------------------------------------------------
 
     private fun trackFrom(r: JsonObject): Track? {
@@ -67,7 +80,19 @@ object Parser {
 
         val fixed = runsText(path(r, "fixedColumns", 0, "musicResponsiveListItemFixedColumnRenderer", "text"))
         val duration = parseDuration(fixed) ?: texts.firstNotNullOfOrNull { parseDuration(it) }
+            ?: texts.firstNotNullOfOrNull { parseSpokenDuration(it) }
         return Track(videoId, title, artist, duration)
+    }
+
+    /** A podcast episode row on a show page: title, then "Oct 5, 2026 • 58 min". */
+    private fun episodeFrom(r: JsonObject): Track? {
+        val videoId = findAll(r, "watchEndpoint").firstNotNullOfOrNull { it["videoId"].str() } ?: return null
+        val title = runsText(r["title"]).trim().ifEmpty { return null }
+        val parts = runsText(r["subtitle"]).split("•").map { it.trim() }.filter { it.isNotEmpty() }
+        val duration = parts.firstNotNullOfOrNull { parseSpokenDuration(it) ?: parseDuration(it) }
+        val date = parts.firstOrNull { parseSpokenDuration(it) == null && parseDuration(it) == null }
+        val show = runsText(r["secondTitle"]).trim()
+        return Track(videoId, title, date ?: show, duration)
     }
 
     private fun collectionFromList(r: JsonObject): MusicCollection? {
@@ -92,12 +117,14 @@ object Parser {
         "MUSIC_PAGE_TYPE_PLAYLIST" -> CollectionKind.PLAYLIST
         "MUSIC_PAGE_TYPE_ALBUM", "MUSIC_PAGE_TYPE_AUDIOBOOK" -> CollectionKind.ALBUM
         "MUSIC_PAGE_TYPE_ARTIST", "MUSIC_PAGE_TYPE_LIBRARY_ARTIST" -> CollectionKind.ARTIST
+        "MUSIC_PAGE_TYPE_PODCAST_SHOW_DETAIL_PAGE" -> CollectionKind.PODCAST
         else -> {
             val id = browse.field("browseId").str().orEmpty()
             when {
                 id.startsWith("VL") -> CollectionKind.PLAYLIST
                 id.startsWith("MPRE") -> CollectionKind.ALBUM
                 id.startsWith("UC") || id.startsWith("MPLA") -> CollectionKind.ARTIST
+                id.startsWith("MPSP") -> CollectionKind.PODCAST
                 else -> CollectionKind.OTHER
             }
         }

@@ -52,10 +52,11 @@ fun LibraryScreen(vm: AppViewModel) {
         if (vm.signedIn) {
             ListRow("Playlists", "Your saved playlists", { vm.go(Screen.LibraryShelf("Playlists", InnerTube.LIBRARY_PLAYLISTS)) }, trailing = chevron, big = true)
             ListRow("Liked songs", "Songs you liked", { vm.go(Screen.Collection(vm.likedSongs())) }, trailing = chevron, big = true)
+            ListRow("Podcasts", "Saved shows and episodes for later", { vm.go(Screen.LibraryShelf("Podcasts", InnerTube.LIBRARY_PODCASTS)) }, trailing = chevron, big = true)
             ListRow("Albums", "Saved albums", { vm.go(Screen.LibraryShelf("Albums", InnerTube.LIBRARY_ALBUMS)) }, trailing = chevron, big = true)
             ListRow("Artists", "Artists in your library", { vm.go(Screen.LibraryShelf("Artists", InnerTube.LIBRARY_ARTISTS)) }, trailing = chevron, big = true)
         } else {
-            TextMMD("Sign in to see your playlists, liked songs, albums and artists.", fontSize = 17.sp, color = Muted,
+            TextMMD("Sign in to see your playlists, liked songs, podcasts, albums and artists.", fontSize = 17.sp, color = Muted,
                 modifier = Modifier.padding(24.dp))
         }
         TextMMD("${formatBytes(vm.bytesUsed)} downloaded", fontSize = 15.sp, color = Muted, modifier = Modifier.padding(24.dp))

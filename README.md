@@ -11,13 +11,16 @@ The queue ends when it ends.
 
 - Sign in with your own YouTube Music account (Google's sign-in page; Lull keeps only the
   session cookies, encrypted with the Android Keystore).
-- Search songs, albums, artists and playlists, in fixed pages with Previous / Next.
-- Library: Downloads, Playlists, Liked songs, Albums, Artists.
+- Search songs, albums, artists, playlists, podcasts and episodes, in fixed pages with
+  Previous / Next.
+- Library: Downloads, Playlists, Liked songs, Podcasts, Albums, Artists.
+- Long listening (classes, episodes, anything over 10 minutes) resumes where you stopped;
+  playback speed from 0.75× to 2×.
 - Offline downloads (YouTube Music Premium), Wi-Fi-only by default.
 - Now Playing with large controls, like, download and a sleep timer. Position updates every
   15 seconds or on tap, to spare the E Ink screen.
 - Queue with a clear end. Radio is opt-in, from the Queue screen or in Settings.
-- Android Auto: text-only lists (Downloads, Playlists, Liked songs), 30 rows max, voice and
+- Android Auto: text-only lists (Downloads, Playlists, Podcasts, Liked songs), 30 rows max, voice and
   typed search, one shared player, small buffer for phones with little RAM.
 
 ## Build

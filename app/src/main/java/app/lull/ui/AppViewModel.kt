@@ -141,7 +141,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
     val searchResults = Paged<Any>(viewModelScope) { cont ->
         val q = query.trim()
-        if (filter == SearchFilter.SONGS) repo.searchTracks(q, cont).let { Page(it.items, it.continuation) }
+        if (filter == SearchFilter.SONGS || filter == SearchFilter.EPISODES) {
+            repo.searchTracks(q, cont, filter).let { Page(it.items, it.continuation) }
+        }
         else repo.searchCollections(q, filter, cont).let { Page(it.items, it.continuation) }
     }
 

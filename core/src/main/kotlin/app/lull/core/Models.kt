@@ -8,7 +8,7 @@ data class Track(
     val durationSec: Int? = null,
 )
 
-enum class CollectionKind { PLAYLIST, ALBUM, ARTIST, OTHER }
+enum class CollectionKind { PLAYLIST, ALBUM, ARTIST, PODCAST, OTHER }
 
 /** A browsable thing: a playlist, album or artist. */
 data class MusicCollection(
@@ -30,4 +30,6 @@ enum class SearchFilter(val params: String) {
     ALBUMS("EgWKAQIYAWoMEA4QChADEAQQCRAF"),
     ARTISTS("EgWKAQIgAWoMEA4QChADEAQQCRAF"),
     PLAYLISTS("EgeKAQQoAEABagoQAxAEEAoQCRAF"),
+    PODCASTS("EgWKAQJQAWoMEA4QChADEAQQCRAF"),
+    EPISODES("EgWKAQJIAWoMEA4QChADEAQQCRAF"),
 }

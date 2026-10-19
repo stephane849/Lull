@@ -15,7 +15,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-enum class Glyph { BACK, CHEVRON, SEARCH, LIBRARY, NOTE, PLAY, PAUSE, NEXT, PREVIOUS, DOWNLOAD, DOWNLOADED, PENDING, CLOSE, HEART, HEART_FILLED, SHUFFLE, MOON }
+enum class Glyph { BACK, CHEVRON, SEARCH, LIBRARY, NOTE, PLAY, PAUSE, NEXT, PREVIOUS, DOWNLOAD, DOWNLOADED, PENDING, CLOSE, HEART, HEART_FILLED, SHUFFLE, MOON, FAST }
 
 /**
  * Simple stroke icons drawn on a 24-unit grid. Drawn locally so the app needs no icon
@@ -58,6 +58,7 @@ fun LineIcon(glyph: Glyph, modifier: Modifier = Modifier, size: Dp = 24.dp, colo
             Glyph.CLOSE -> { line(6f to 6f, 18f to 18f); line(18f to 6f, 6f to 18f) }
             Glyph.HEART, Glyph.HEART_FILLED -> drawHeart(u, color, if (glyph == Glyph.HEART_FILLED) Fill else stroke)
             Glyph.SHUFFLE -> { line(4f to 7f, 7f to 7f, 17f to 17f, 20f to 17f); line(4f to 17f, 7f to 17f, 10f to 14f); line(14f to 10f, 17f to 7f, 20f to 7f); line(18f to 5f, 20f to 7f, 18f to 9f); line(18f to 15f, 20f to 17f, 18f to 19f) }
+            Glyph.FAST -> { line(5f to 6f, 11f to 12f, 5f to 18f); line(12f to 6f, 18f to 12f, 12f to 18f) }
             Glyph.MOON -> { circle(12f, 12f, 8f); poly(true, 12f to 4f, 16f to 5f, 18f to 8f, 18f to 12f, 15f to 10f, 12f to 9f) }
         }
     }

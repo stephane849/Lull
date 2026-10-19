@@ -89,17 +89,21 @@ fun SearchScreen(vm: AppViewModel) {
 
 @Composable
 private fun FilterTabs(selected: SearchFilter, onSelect: (SearchFilter) -> Unit) {
-    val labels = mapOf(
+    val labels = listOf(
         SearchFilter.SONGS to "Songs",
         SearchFilter.ALBUMS to "Albums",
         SearchFilter.ARTISTS to "Artists",
         SearchFilter.PLAYLISTS to "Playlists",
+        SearchFilter.PODCASTS to "Podcasts",
+        SearchFilter.EPISODES to "Episodes",
     )
+    // Two rows of three so every label fits the Kompakt's narrow screen.
+    labels.chunked(3).forEach { row ->
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)
+        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)
             .border(2.dp, Ink, RoundedCornerShape(10.dp)),
     ) {
-        labels.forEach { (filter, label) ->
+        row.forEach { (filter, label) ->
             val isSelected = filter == selected
             Box(
                 Modifier.weight(1f).height(44.dp)
@@ -117,6 +121,7 @@ private fun FilterTabs(selected: SearchFilter, onSelect: (SearchFilter) -> Unit)
             }
         }
     }
+    }
 }
 
 /** Search results can include artists; opening one shows that artist's songs. */
@@ -124,5 +129,6 @@ internal fun MusicCollection.kindLabel(): String = when (kind) {
     CollectionKind.PLAYLIST -> "Playlist"
     CollectionKind.ALBUM -> "Album"
     CollectionKind.ARTIST -> "Artist"
+    CollectionKind.PODCAST -> "Podcast"
     CollectionKind.OTHER -> ""
 }

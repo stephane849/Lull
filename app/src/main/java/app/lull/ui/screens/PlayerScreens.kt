@@ -102,8 +102,8 @@ fun NowPlayingScreen(vm: AppViewModel) {
 
         val videoId = state.videoId
         Row(
-            Modifier.fillMaxWidth().padding(start = 28.dp, end = 28.dp, top = 24.dp, bottom = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             val isLiked = videoId != null && vm.liked[videoId] == true
             SmallControl(if (isLiked) Glyph.HEART_FILLED else Glyph.HEART, if (isLiked) "Liked" else "Like", Modifier.weight(1f)) {
@@ -120,12 +120,16 @@ fun NowPlayingScreen(vm: AppViewModel) {
                     vm.download(app.lull.core.Track(videoId, state.title, state.artist, (state.durationMs / 1000).toInt().takeIf { it > 0 }))
                 }
             }
-            SmallControl(Glyph.MOON, if (vm.sleepMinutes == 0) "Sleep: off" else "Sleep: ${vm.sleepMinutes} min", Modifier.weight(1f)) {
+            SmallControl(Glyph.MOON, if (vm.sleepMinutes == 0) "Sleep" else "${vm.sleepMinutes} min", Modifier.weight(1f)) {
                 vm.cycleSleepTimer()
             }
+            SmallControl(Glyph.FAST, formatSpeed(state.speed), Modifier.weight(1f)) { vm.player.cycleSpeed() }
         }
     }
 }
+
+private fun formatSpeed(speed: Float): String =
+    (if (speed % 1f == 0f) "%.0f".format(speed) else "%.2f".format(speed).trimEnd('0')) + "×"
 
 @Composable
 private fun BigControl(glyph: Glyph, label: String, filled: Boolean, onClick: () -> Unit) {

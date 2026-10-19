@@ -24,6 +24,7 @@ import androidx.media3.session.SessionResult
 import app.lull.AppGraph
 import app.lull.core.CollectionKind
 import app.lull.core.InnerTube
+import app.lull.data.ResumePositions
 import app.lull.download.Downloads
 import app.lull.ui.MainActivity
 import com.google.common.collect.ImmutableList
@@ -53,6 +54,14 @@ class PlaybackService : MediaLibraryService() {
     private var session: MediaLibrarySession? = null
 
     private var sleepTask: Runnable? = null
+    private lateinit var resume: ResumePositions
+    private var currentVideoId: String? = null
+    private val saveTask = object : Runnable {
+        override fun run() {
+            if (player.isPlaying) saveResumePosition()
+            handler.postDelayed(this, RESUME_SAVE_MS)
+        }
+    }
     private val searchResults = HashMap<String, List<MediaItem>>()
 
     /** The last song list the car browsed, so tapping one song queues the rest of that list. */
@@ -73,12 +82,30 @@ class PlaybackService : MediaLibraryService() {
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
+        resume = ResumePositions(this)
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
-                // Mindful default: the queue simply ends. Radio only if the user turned it on.
-                if (playbackState == Player.STATE_ENDED && AppGraph.settings.radioAfterQueue) startRadio()
+                if (playbackState == Player.STATE_ENDED) {
+                    currentVideoId?.let(resume::clear)
+                    // Mindful default: the queue simply ends. Radio only if the user turned it on.
+                    if (AppGraph.settings.radioAfterQueue) startRadio()
+                }
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (!isPlaying) saveResumePosition()
+            }
+
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                // Finished naturally: forget its spot. Skipped away: the last periodic save stands.
+                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) currentVideoId?.let(resume::clear)
+                currentVideoId = mediaItem?.mediaId?.let(MediaIds::videoIdOf)
+                // Pick up long listening where it was left.
+                val saved = currentVideoId?.let(resume::get) ?: 0L
+                if (saved > RESUME_MIN_MS) player.seekTo(saved)
             }
         })
+        handler.postDelayed(saveTask, RESUME_SAVE_MS)
 
         val openApp = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),
@@ -98,12 +125,22 @@ class PlaybackService : MediaLibraryService() {
     override fun onDestroy() {
         scope.cancel()
         sleepTask?.let(handler::removeCallbacks)
+        handler.removeCallbacks(saveTask)
         session?.run {
             player.release()
             release()
         }
         session = null
         super.onDestroy()
+    }
+
+    /** Only long items (over 10 minutes) are remembered, so songs always start from the top. */
+    private fun saveResumePosition() {
+        val id = currentVideoId ?: return
+        val duration = player.duration
+        if (duration == C.TIME_UNSET || duration < LONG_ITEM_MS) return
+        val position = player.currentPosition
+        if (position > duration - FINISHED_MARGIN_MS) resume.clear(id) else resume.set(id, position)
     }
 
     private fun setSleepTimer(minutes: Int) {
@@ -143,12 +180,15 @@ class PlaybackService : MediaLibraryService() {
             MediaIds.ROOT -> listOf(
                 folderItem(MediaIds.DOWNLOADS, "Downloads", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED),
                 folderItem(MediaIds.PLAYLISTS, "Playlists", MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS),
+                folderItem(MediaIds.PODCASTS, "Podcasts", MediaMetadata.MEDIA_TYPE_FOLDER_PODCASTS),
                 folderItem(MediaIds.LIKED, "Liked songs", MediaMetadata.MEDIA_TYPE_PLAYLIST),
             )
             MediaIds.DOWNLOADS -> withContext(Dispatchers.IO) { Downloads.completed() }
                 .take(CAR_PAGE).map { it.toMediaItem() }.also { lastBrowsedList = it }
             MediaIds.PLAYLISTS -> repo.libraryCollections(InnerTube.LIBRARY_PLAYLISTS).items
                 .filter { it.kind == CollectionKind.PLAYLIST }
+                .take(CAR_PAGE).map { it.toFolderItem() }
+            MediaIds.PODCASTS -> repo.libraryCollections(InnerTube.LIBRARY_PODCASTS).items
                 .take(CAR_PAGE).map { it.toFolderItem() }
             MediaIds.LIKED -> repo.collectionTracks(InnerTube.LIKED_SONGS).items
                 .take(CAR_PAGE).map { it.toMediaItem() }.also { lastBrowsedList = it }
@@ -281,5 +321,9 @@ class PlaybackService : MediaLibraryService() {
         private const val CAR_PAGE = 30
         private const val CAR_SEARCH = 10
         private const val RADIO_SIZE = 25
+        private const val RESUME_SAVE_MS = 15_000L
+        private const val RESUME_MIN_MS = 30_000L
+        private const val LONG_ITEM_MS = 10 * 60_000L
+        private const val FINISHED_MARGIN_MS = 60_000L
     }
 }

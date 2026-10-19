@@ -12,6 +12,7 @@ object MediaIds {
     const val DOWNLOADS = "downloads"
     const val PLAYLISTS = "playlists"
     const val LIKED = "liked"
+    const val PODCASTS = "podcasts"
     private const val TRACK = "track:"
     private const val COLLECTION = "collection:"
 

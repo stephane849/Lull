@@ -38,6 +38,8 @@ class InnerTube(
         const val LIBRARY_PLAYLISTS = "FEmusic_liked_playlists"
         const val LIBRARY_ALBUMS = "FEmusic_liked_albums"
         const val LIBRARY_ARTISTS = "FEmusic_library_corpus_track_artists"
+        /** Saved podcast shows, plus "New episodes" and "Episodes for later". */
+        const val LIBRARY_PODCASTS = "FEmusic_library_non_music_audio_list"
 
         private const val USER_AGENT =
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
@@ -46,8 +48,9 @@ class InnerTube(
 
     val isSignedIn: Boolean get() = credentials()?.sapisid != null
 
-    fun searchTracks(query: String, continuation: String? = null): Page<Track> {
-        val root = post("search", search(query, SearchFilter.SONGS), continuation)
+    /** Songs, or podcast episodes with [SearchFilter.EPISODES]. */
+    fun searchTracks(query: String, continuation: String? = null, filter: SearchFilter = SearchFilter.SONGS): Page<Track> {
+        val root = post("search", search(query, filter), continuation)
         return Page(Parser.tracks(root), Parser.continuation(root))
     }
 
@@ -56,13 +59,13 @@ class InnerTube(
         return Page(Parser.collections(root), Parser.continuation(root))
     }
 
-    /** Library shelves: [LIBRARY_PLAYLISTS], [LIBRARY_ALBUMS] or [LIBRARY_ARTISTS]. */
+    /** Library shelves: [LIBRARY_PLAYLISTS], [LIBRARY_ALBUMS], [LIBRARY_ARTISTS] or [LIBRARY_PODCASTS]. */
     fun libraryCollections(browseId: String, continuation: String? = null): Page<MusicCollection> {
         val root = post("browse", browse(browseId), continuation)
         return Page(Parser.collections(root), Parser.continuation(root))
     }
 
-    /** Songs inside a playlist, album or artist page, or [LIKED_SONGS]. */
+    /** Songs or episodes inside a playlist, album, artist or podcast page, or [LIKED_SONGS]. */
     fun collectionTracks(browseId: String, continuation: String? = null): Page<Track> {
         val root = post("browse", browse(browseId), continuation)
         return Page(Parser.tracks(root), Parser.continuation(root))

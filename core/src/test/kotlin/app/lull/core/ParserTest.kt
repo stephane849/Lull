@@ -53,6 +53,25 @@ class ParserTest {
     }
 
     @Test
+    fun readsPodcastEpisodes() {
+        val json = """
+        {"contents":[{"musicMultiRowListItemRenderer":{
+          "title":{"runs":[{"text":"Lesson 12: Purification"}]},
+          "subtitle":{"runs":[{"text":"Oct 5, 2026"},{"text":" • "},{"text":"1 hr 2 min"}]},
+          "playNavigationEndpoint":{"watchEndpoint":{"videoId":"ep1"}}}}]}
+        """.trimIndent()
+        val tracks = Parser.tracks(Json.parseToJsonElement(json))
+        assertEquals(listOf(Track("ep1", "Lesson 12: Purification", "Oct 5, 2026", 3720)), tracks)
+    }
+
+    @Test
+    fun parsesSpokenDurations() {
+        assertEquals(3720, Parser.parseSpokenDuration("1 hr 2 min"))
+        assertEquals(3480, Parser.parseSpokenDuration("58 min"))
+        assertNull(Parser.parseSpokenDuration("Oct 5, 2026"))
+    }
+
+    @Test
     fun parsesDurations() {
         assertEquals(185, Parser.parseDuration("3:05"))
         assertEquals(3723, Parser.parseDuration("1:02:03"))
