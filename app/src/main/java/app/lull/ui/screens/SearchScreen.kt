@@ -57,7 +57,8 @@ fun SearchScreen(vm: AppViewModel) {
             onValueChange = { vm.query = it },
             singleLine = true,
             placeholder = { TextMMD("Search YouTube Music", fontSize = 18.sp) },
-            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 19.sp),
+            // Keep MMD's Lato; only enlarge it.
+            textStyle = androidx.compose.material3.LocalTextStyle.current.copy(fontSize = 19.sp),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { focus.clearFocus(); vm.search() }),
             modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 8.dp),

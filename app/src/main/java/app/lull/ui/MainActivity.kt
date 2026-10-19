@@ -8,7 +8,10 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import app.lull.ui.screens.CollectionScreen
 import app.lull.ui.screens.DownloadsScreen
 import app.lull.ui.screens.LibraryScreen
@@ -32,8 +35,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= 33) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         setContent {
-            // MMD: monochrome colours, E Ink typography, ripple off.
-            ThemeMMD { LullRoot(vm) }
+            // MMD: monochrome colours, Lato typography, ripple off.
+            ThemeMMD {
+                // Pin MMD's Lato as the base style so every piece of text inherits it.
+                CompositionLocalProvider(LocalTextStyle provides MaterialTheme.typography.bodyLarge) {
+                    LullRoot(vm)
+                }
+            }
         }
     }
 }
