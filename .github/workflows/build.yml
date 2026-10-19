@@ -20,9 +20,19 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
 
       - name: Test and build
+        shell: bash
         run: |
           chmod +x gradlew
-          ./gradlew :core:test :app:assembleDebug
+          set -o pipefail
+          ./gradlew :core:test :app:assembleDebug --stacktrace 2>&1 | tee build.log
+
+      # Surface compiler and Gradle errors as annotations so they show without opening logs.
+      - name: Report errors
+        if: failure()
+        shell: bash
+        run: |
+          msg=$(grep -E "^e: |error:|What went wrong|Could not (find|resolve)|> " build.log | grep -v "^> Task" | head -60 | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')
+          echo "::error title=Build failed::${msg}"
 
       - uses: actions/upload-artifact@v5
         with:
