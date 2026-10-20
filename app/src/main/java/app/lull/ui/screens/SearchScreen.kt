@@ -50,7 +50,7 @@ fun SearchScreen(vm: AppViewModel) {
     ScreenFrame(
         title = "Search",
         onBack = { vm.back() },
-        bottom = { MiniPlayer(player, { vm.go(Screen.NowPlaying) }, vm.player::toggle) },
+        bottom = { MiniPlayer(player, { vm.go(Screen.NowPlaying) }, vm.player::toggle, { vm.player.seekBy(-15_000) }) },
     ) {
         TextFieldMMD(
             value = vm.query,

@@ -31,4 +31,14 @@ class Settings(context: Context) {
     var sleepDefaultMinutes: Int
         get() = prefs.getInt("sleep_default", 30)
         set(v) = prefs.edit().putInt("sleep_default", v).apply()
+
+    /** Lists shown in reverse (oldest episode first), by browse id. */
+    fun isReversed(browseId: String): Boolean =
+        prefs.getStringSet("reversed_lists", emptySet())?.contains(browseId) == true
+
+    fun setReversed(browseId: String, reversed: Boolean) {
+        val set = HashSet(prefs.getStringSet("reversed_lists", emptySet()) ?: emptySet())
+        if (reversed) set.add(browseId) else set.remove(browseId)
+        prefs.edit().putStringSet("reversed_lists", set).apply()
+    }
 }

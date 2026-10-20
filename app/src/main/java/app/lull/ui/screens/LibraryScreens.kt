@@ -1,5 +1,12 @@
 package app.lull.ui.screens
 
+import app.lull.ui.components.formatLeft
+import app.lull.data.ResumePositions
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -47,7 +54,7 @@ import com.mudita.mmd.components.text.TextMMD
 @Composable
 private fun miniPlayerBar(vm: AppViewModel): @Composable () -> Unit {
     val player by vm.player.state.collectAsStateWithLifecycle()
-    return { MiniPlayer(player, { vm.go(Screen.NowPlaying) }, vm.player::toggle) }
+    return { MiniPlayer(player, { vm.go(Screen.NowPlaying) }, vm.player::toggle, { vm.player.seekBy(-15_000) }) }
 }
 
 @Composable
@@ -109,17 +116,46 @@ fun LibraryShelfScreen(vm: AppViewModel, title: String, browseId: String) {
     }
 }
 
+/** Progress shown on a row: only for long items (classes, episodes), never for songs. */
+private fun progressOf(resume: ResumePositions, track: Track): String? {
+    val dur = track.durationSec ?: return null
+    if (dur < LONG_ITEM_SEC) return null
+    if (resume.isFinished(track.videoId)) return "Played"
+    val pos = resume.get(track.videoId)
+    return if (pos > 0) formatLeft(dur * 1000L - pos) else null
+}
+
+/**
+ * Where to pick up: the item played most recently, or the one after it if that was
+ * finished. Null when nothing in the list has been started.
+ */
+private fun continueIndex(resume: ResumePositions, tracks: List<Track>): Int? {
+    val last = tracks.indices.maxByOrNull { resume.lastPlayed(tracks[it].videoId) } ?: return null
+    if (resume.lastPlayed(tracks[last].videoId) == 0L) return null
+    if (!resume.isFinished(tracks[last].videoId)) return last
+    return (last + 1 until tracks.size).firstOrNull { !resume.isFinished(tracks[it].videoId) }
+}
+
+private const val LONG_ITEM_SEC = 600
+
 @Composable
 fun CollectionScreen(vm: AppViewModel, collection: MusicCollection) {
     val paged = vm.collectionTracks(collection.browseId)
     LaunchedEffect(paged) { if (!paged.started) paged.start() }
-    val tracks = paged.items
+    val tracks = paged.ordered
     val isPodcast = collection.kind == CollectionKind.PODCAST
+    val canReverse = isPodcast || collection.kind == CollectionKind.PLAYLIST
     val noun = if (isPodcast) "episode" else "song"
     // Lecture series repeat the same title on every row; show only the part that differs.
     val shortTitles = remember(tracks) { Titles.distinct(tracks.map { it.title }) }
     // The owner's name is already under the title, so rows only repeat it when it differs.
     val owner = collection.subtitle.substringAfterLast("• ").trim()
+    val resumeVersion by vm.resume.version.collectAsStateWithLifecycle()
+    // Reversed order only makes sense once every episode is in.
+    val settling = paged.reversed && !paged.complete
+    val resumeAt = remember(tracks, resumeVersion, settling) {
+        if (settling) null else continueIndex(vm.resume, tracks)
+    }
 
     ScreenFrame(title = collection.kindLabel().ifEmpty { null } ?: collection.title, onBack = { vm.back() }, bottom = miniPlayerBar(vm)) {
         Column(Modifier.padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 4.dp)) {
@@ -128,7 +164,7 @@ fun CollectionScreen(vm: AppViewModel, collection: MusicCollection) {
             val allDownloaded = tracks.isNotEmpty() && tracks.all { it.videoId in vm.downloaded }
             val count = when {
                 tracks.isEmpty() -> null
-                !paged.exhausted -> "${tracks.size}+ ${noun}s"
+                !paged.complete -> "${tracks.size}+ ${noun}s"
                 tracks.size == 1 -> "1 $noun"
                 else -> "${tracks.size} ${noun}s"
             }
@@ -138,9 +174,36 @@ fun CollectionScreen(vm: AppViewModel, collection: MusicCollection) {
                 if (allDownloaded) "Downloaded" else null,
             ).joinToString(" · ")
             if (meta.isNotEmpty()) TextMMD(meta, fontSize = 16.sp, color = Muted, modifier = Modifier.padding(top = 8.dp))
+            if (canReverse && tracks.size > 1) {
+                val label = when {
+                    isPodcast && paged.reversed -> "Oldest first"
+                    isPodcast -> "Newest first"
+                    paged.reversed -> "Reversed"
+                    else -> "Playlist order"
+                }
+                Row(
+                    Modifier.padding(top = 4.dp).heightIn(min = 44.dp)
+                        .clickable(role = Role.Button) { vm.setReversed(collection.browseId, !paged.reversed) },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextMMD("Order: ", fontSize = 16.sp, color = Muted)
+                    TextMMD(label, fontSize = 16.sp, fontWeight = FontWeight.Bold, textDecoration = TextDecoration.Underline)
+                }
+            }
         }
-        PlayButtons(vm, tracks, collection.title, showDownload = true)
+        if (!settling) {
+            PlayButtons(
+                vm, tracks, collection.title, showDownload = true,
+                resumeAt = resumeAt,
+                resumeLabel = resumeAt?.let { shortTitles.getOrElse(it) { tracks[it].title } },
+            )
+        }
         HorizontalDividerMMD(thickness = 2.dp, color = Ink)
+        if (settling && paged.error == null) {
+            TextMMD("Loading every ${noun} to list the oldest first…", fontSize = 17.sp, color = Muted,
+                modifier = Modifier.padding(24.dp))
+            return@ScreenFrame
+        }
         PagedStatus(paged, empty = "No ${noun}s.")
         paged.pageItems.forEachIndexed { i, track ->
             val index = paged.page * paged.pageSize + i
@@ -154,29 +217,51 @@ fun CollectionScreen(vm: AppViewModel, collection: MusicCollection) {
                 number = index + 1,
                 displayTitle = shortTitles.getOrElse(index) { track.title },
                 showArtist = !track.artist.equals(owner, ignoreCase = true),
+                progress = remember(track.videoId, resumeVersion) { progressOf(vm.resume, track) },
             )
         }
         if (tracks.isNotEmpty()) Pager(paged)
     }
 }
 
+/**
+ * Play / Shuffle / Download all. With [resumeAt], a full-width "Continue" leads, since
+ * picking up a series where you left it is the common case.
+ */
 @Composable
-private fun PlayButtons(vm: AppViewModel, tracks: List<Track>, source: String, showDownload: Boolean) {
+private fun PlayButtons(
+    vm: AppViewModel,
+    tracks: List<Track>,
+    source: String,
+    showDownload: Boolean,
+    resumeAt: Int? = null,
+    resumeLabel: String? = null,
+) {
     if (tracks.isEmpty()) return
-    Row(
+    Column(
         Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 20.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        PrimaryButton("Play", Glyph.PLAY, { vm.player.play(tracks, 0, source) }, Modifier.weight(1f))
-        SecondaryButton("Shuffle", Glyph.SHUFFLE, { vm.player.shuffle(tracks, source) }, Modifier.weight(1f))
-        if (showDownload) {
-            val allDone = tracks.all { it.videoId in vm.downloaded }
-            SquareIconButton(
-                if (allDone) Glyph.DOWNLOADED else Glyph.DOWNLOAD,
-                if (allDone) "All downloaded" else "Download all",
-                { vm.downloadAll(tracks) },
-                enabled = !allDone,
-            )
+        if (resumeAt != null) {
+            PrimaryButton("Continue: ${resumeLabel ?: "where you left off"}", Glyph.PLAY,
+                { vm.player.play(tracks, resumeAt, source) }, Modifier.fillMaxWidth())
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (resumeAt != null) {
+                SecondaryButton("From start", Glyph.PLAY, { vm.player.play(tracks, 0, source) }, Modifier.weight(1f))
+            } else {
+                PrimaryButton("Play", Glyph.PLAY, { vm.player.play(tracks, 0, source) }, Modifier.weight(1f))
+            }
+            SecondaryButton("Shuffle", Glyph.SHUFFLE, { vm.player.shuffle(tracks, source) }, Modifier.weight(1f))
+            if (showDownload) {
+                val allDone = tracks.all { it.videoId in vm.downloaded }
+                SquareIconButton(
+                    if (allDone) Glyph.DOWNLOADED else Glyph.DOWNLOAD,
+                    if (allDone) "All downloaded" else "Download all",
+                    { vm.downloadAll(tracks) },
+                    enabled = !allDone,
+                )
+            }
         }
     }
 }

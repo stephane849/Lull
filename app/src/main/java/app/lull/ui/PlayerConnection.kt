@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.os.Bundle
 import androidx.core.os.bundleOf
+import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionCommand
@@ -135,6 +136,16 @@ class PlayerConnection(context: Context, scope: CoroutineScope) {
                 c.play()
             }
         }
+    }
+
+    /** Jump back or ahead within the current item (−15 s / +30 s for talks). */
+    fun seekBy(deltaMs: Long) {
+        val c = controller ?: return
+        var target = (c.currentPosition + deltaMs).coerceAtLeast(0)
+        val duration = c.duration
+        if (duration != C.TIME_UNSET && duration > 0) target = target.coerceAtMost(duration - 1_000)
+        c.seekTo(target)
+        refresh()
     }
 
     fun next() = controller?.seekToNextMediaItem()

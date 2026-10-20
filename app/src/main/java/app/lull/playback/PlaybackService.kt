@@ -82,11 +82,11 @@ class PlaybackService : MediaLibraryService() {
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
-        resume = ResumePositions(this)
+        resume = AppGraph.resume
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED) {
-                    currentVideoId?.let(resume::clear)
+                    currentVideoId?.let(resume::finish)
                     // Mindful default: the queue simply ends. Radio only if the user turned it on.
                     if (AppGraph.settings.radioAfterQueue) startRadio()
                 }
@@ -97,8 +97,8 @@ class PlaybackService : MediaLibraryService() {
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                // Finished naturally: forget its spot. Skipped away: the last periodic save stands.
-                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) currentVideoId?.let(resume::clear)
+                // Finished naturally: mark it played. Skipped away: the last periodic save stands.
+                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) currentVideoId?.let(resume::finish)
                 currentVideoId = mediaItem?.mediaId?.let(MediaIds::videoIdOf)
                 // Pick up long listening where it was left.
                 val saved = currentVideoId?.let(resume::get) ?: 0L
@@ -140,7 +140,7 @@ class PlaybackService : MediaLibraryService() {
         val duration = player.duration
         if (duration == C.TIME_UNSET || duration < LONG_ITEM_MS) return
         val position = player.currentPosition
-        if (position > duration - FINISHED_MARGIN_MS) resume.clear(id) else resume.set(id, position)
+        if (position > duration - FINISHED_MARGIN_MS) resume.finish(id) else resume.set(id, position)
     }
 
     private fun setSleepTimer(minutes: Int) {

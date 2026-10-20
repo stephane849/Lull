@@ -28,7 +28,7 @@ fun StartScreen(vm: AppViewModel) {
     ScreenFrame(
         title = null,
         onBack = null,
-        bottom = { MiniPlayer(player, { vm.go(Screen.NowPlaying) }, vm.player::toggle) },
+        bottom = { MiniPlayer(player, { vm.go(Screen.NowPlaying) }, vm.player::toggle, { vm.player.seekBy(-15_000) }) },
     ) {
         Column(Modifier.padding(start = 24.dp, end = 24.dp, top = 48.dp, bottom = 24.dp)) {
             TextMMD("Lull", fontSize = 52.sp, fontWeight = FontWeight.Bold)

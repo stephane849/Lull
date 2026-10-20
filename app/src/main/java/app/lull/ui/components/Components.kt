@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -166,11 +167,12 @@ fun TrackRow(
     number: Int? = null,
     displayTitle: String = track.title,
     showArtist: Boolean = true,
+    progress: String? = null,
 ) {
     val artist = track.artist.takeIf { showArtist && it.isNotBlank() && !Titles.isCount(it) }
     ListRow(
         title = displayTitle,
-        subtitle = listOfNotNull(artist, track.durationSec?.let(::formatDuration)).joinToString(" · "),
+        subtitle = listOfNotNull(artist, track.durationSec?.let(::formatDuration), progress).joinToString(" · "),
         onClick = onPlay,
         onLongClick = onQueue,
         leading = number?.toString(),
@@ -215,28 +217,60 @@ fun <T> PagedStatus(paged: Paged<T>, empty: String) {
     TextMMD(message, fontSize = 17.sp, color = Muted, modifier = Modifier.padding(24.dp))
 }
 
+/** Long items (classes, episodes) get skip-back and time left; songs keep it simple. */
+const val LONG_ITEM_MS = 10 * 60_000L
+
 @Composable
-fun MiniPlayer(state: PlayerUi, onOpen: () -> Unit, onToggle: () -> Unit) {
+fun MiniPlayer(state: PlayerUi, onOpen: () -> Unit, onToggle: () -> Unit, onRewind: (() -> Unit)? = null) {
     if (!state.hasMedia) return
+    val long = state.durationMs >= LONG_ITEM_MS
     HorizontalDividerMMD(thickness = 2.dp, color = Ink)
     Row(
-        Modifier.fillMaxWidth().height(68.dp).padding(start = 20.dp, end = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        Modifier.fillMaxWidth().height(80.dp).padding(start = 20.dp, end = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Column(Modifier.weight(1f).clickable(onClick = onOpen)) {
             // Middle ellipsis keeps the end of the title, where "(Part 3)" or "Ep. 12" usually is.
             TextMMD(state.title, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.MiddleEllipsis)
-            val sub = state.artist.takeUnless { it.isBlank() || Titles.isCount(it) }
-            if (sub != null) TextMMD(sub, fontSize = 14.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val sub = listOfNotNull(
+                state.artist.takeUnless { it.isBlank() || Titles.isCount(it) },
+                if (long) formatLeft((state.durationMs - state.positionMs).coerceAtLeast(0)) else null,
+            ).joinToString(" · ")
+            if (sub.isNotEmpty()) TextMMD(sub, fontSize = 14.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        Box(
-            Modifier.size(48.dp)
-                .border(2.dp, Ink, RoundedCornerShape(24.dp))
-                .clickable(role = Role.Button, onClick = onToggle)
-                .semantics { contentDescription = if (state.isPlaying) "Pause" else "Play" },
-            contentAlignment = Alignment.Center,
-        ) { LineIcon(if (state.isPlaying) Glyph.PAUSE else Glyph.PLAY) }
+        if (long && onRewind != null) SkipButton(Glyph.REWIND, "15", "Back 15 seconds", onRewind, size = 52)
+        PlayPauseButton(state.isPlaying, onToggle, size = 60)
+    }
+}
+
+/** The round, filled play/pause: the one solid shape on the screen. */
+@Composable
+fun PlayPauseButton(isPlaying: Boolean, onClick: () -> Unit, size: Int) {
+    Box(
+        Modifier.size(size.dp)
+            .background(Ink, CircleShape)
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = if (isPlaying) "Pause" else "Play" },
+        contentAlignment = Alignment.Center,
+    ) { LineIcon(if (isPlaying) Glyph.PAUSE else Glyph.PLAY, size = (size * 0.4f).dp, color = Paper) }
+}
+
+/** A round outlined skip button: arrow on top, seconds underneath. */
+@Composable
+fun SkipButton(glyph: Glyph, seconds: String, label: String, onClick: () -> Unit, size: Int = 84) {
+    val big = size >= 70
+    Column(
+        Modifier.size(size.dp)
+            .border(2.5.dp, Ink, CircleShape)
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = label },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        LineIcon(glyph, size = if (big) 26.dp else 18.dp)
+        TextMMD(seconds, fontSize = if (big) 17.sp else 12.sp, fontWeight = FontWeight.Black,
+            lineHeight = if (big) 18.sp else 13.sp)
     }
 }
 
@@ -283,6 +317,17 @@ fun formatDuration(seconds: Int): String {
     val m = (seconds % 3600) / 60
     val s = seconds % 60
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
+}
+
+/** "36 min left", "1 hr 5 min left", "Under a minute left". */
+fun formatLeft(ms: Long): String {
+    val min = (ms / 60_000).toInt()
+    return when {
+        min < 1 -> "Under a minute left"
+        min < 60 -> "$min min left"
+        min % 60 == 0 -> "${min / 60} hr left"
+        else -> "${min / 60} hr ${min % 60} min left"
+    }
 }
 
 fun formatMs(ms: Long): String = formatDuration((ms / 1000).toInt())

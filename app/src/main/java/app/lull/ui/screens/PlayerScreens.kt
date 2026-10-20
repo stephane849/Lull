@@ -1,5 +1,14 @@
 package app.lull.ui.screens
 
+import app.lull.ui.components.formatLeft
+import app.lull.ui.components.SkipButton
+import app.lull.ui.components.PlayPauseButton
+import app.lull.ui.PlayerUi
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -56,13 +65,15 @@ fun NowPlayingScreen(vm: AppViewModel) {
                 HorizontalDividerMMD(thickness = 2.dp, color = Ink)
                 Column(Modifier.fillMaxWidth().clickable { vm.go(Screen.Queue) }.padding(horizontal = 28.dp, vertical = 16.dp)) {
                     val next = state.upcoming.firstOrNull()
-                    TextMMD(if (next != null) "Up next: ${next.title} · ${next.artist}" else "Nothing after this song",
-                        fontSize = 16.sp, maxLines = 1)
+                    TextMMD(
+                        if (next != null) "Up next: ${listOfNotNull(next.title, next.artist.ifBlank { null }).joinToString(" · ")}"
+                        else "Nothing after this",
+                        fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
                     TextMMD(
                         when (val n = state.upcoming.size) {
-                            0 -> "Playback stops when this song ends"
-                            1 -> "Queue ends after 1 more song"
-                            else -> "Queue ends after $n more songs"
+                            0 -> "Playback stops when this ends"
+                            else -> "Queue ends after $n more"
                         },
                         fontSize = 15.sp, color = Muted,
                     )
@@ -76,54 +87,70 @@ fun NowPlayingScreen(vm: AppViewModel) {
             return@ScreenFrame
         }
 
-        Column(Modifier.padding(start = 28.dp, end = 28.dp, top = 32.dp)) {
-            state.source?.let { TextMMD("From $it", fontSize = 16.sp, color = Muted) }
-            TextMMD(state.title, fontSize = 38.sp, fontWeight = FontWeight.Bold, lineHeight = 42.sp, maxLines = 3,
-                modifier = Modifier.padding(top = 10.dp))
-            TextMMD(state.artist, fontSize = 22.sp, modifier = Modifier.padding(top = 8.dp))
-            // Updated every 15 s, or right away when tapped. No ticking progress bar.
-            TextMMD(
-                "${formatMs(state.positionMs)} / ${formatMs(state.durationMs)}",
-                fontSize = 22.sp,
-                modifier = Modifier.padding(top = 22.dp).clickable { vm.player.refresh() },
-            )
+        val total = state.queue.size
+        Column(Modifier.padding(start = 28.dp, end = 28.dp, top = 28.dp)) {
+            val where = listOfNotNull(state.source, if (total > 1) "${state.index + 1} of $total" else null).joinToString(" · ")
+            if (where.isNotEmpty()) TextMMD(where, fontSize = 16.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            TextMMD(state.title, fontSize = 32.sp, fontWeight = FontWeight.Bold, lineHeight = 38.sp, maxLines = 3,
+                overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
+            if (state.artist.isNotBlank()) TextMMD(state.artist, fontSize = 20.sp, modifier = Modifier.padding(top = 6.dp))
+        }
+
+        // Position updates every 15 s, or right away when tapped. No ticking.
+        Column(Modifier.fillMaxWidth().clickable { vm.player.refresh() }.padding(start = 28.dp, end = 28.dp, top = 24.dp)) {
+            ProgressStrip(state)
+            Row(Modifier.padding(top = 8.dp)) {
+                TextMMD("${formatMs(state.positionMs)} of ${formatMs(state.durationMs)}", fontSize = 17.sp)
+                if (state.durationMs > 0) {
+                    TextMMD(" · ", fontSize = 17.sp)
+                    TextMMD(formatLeft((state.durationMs - state.positionMs).coerceAtLeast(0)), fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold)
+                }
+            }
         }
 
         Row(
-            Modifier.fillMaxWidth().padding(top = 32.dp),
-            horizontalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterHorizontally),
+            Modifier.fillMaxWidth().padding(top = 28.dp),
+            horizontalArrangement = Arrangement.spacedBy(28.dp, Alignment.CenterHorizontally),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            BigControl(Glyph.PREVIOUS, "Previous", filled = false) { vm.player.previous() }
-            BigControl(if (state.isPlaying) Glyph.PAUSE else Glyph.PLAY, if (state.isPlaying) "Pause" else "Play", filled = true) {
-                vm.player.toggle()
-            }
-            BigControl(Glyph.NEXT, "Next", filled = false) { vm.player.next() }
+            SkipButton(Glyph.REWIND, "15", "Back 15 seconds", { vm.player.seekBy(-15_000) })
+            PlayPauseButton(state.isPlaying, vm.player::toggle, size = 128)
+            SkipButton(Glyph.FORWARD, "30", "Forward 30 seconds", { vm.player.seekBy(30_000) })
+        }
+
+        Row(
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            TextLink("‹ Previous", enabled = true) { vm.player.previous() }
+            TextLink("Next ›", enabled = state.upcoming.isNotEmpty()) { vm.player.next() }
         }
 
         val videoId = state.videoId
         Row(
-            Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 16.dp),
+            Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            val isLiked = videoId != null && vm.liked[videoId] == true
-            SmallControl(if (isLiked) Glyph.HEART_FILLED else Glyph.HEART, if (isLiked) "Liked" else "Like", Modifier.weight(1f)) {
-                videoId?.let(vm::toggleLike)
+            OptionButton(formatSpeed(state.speed), "Playback speed", Modifier.weight(1f)) { vm.player.cycleSpeed() }
+            OptionButton(if (vm.sleepMinutes == 0) "Sleep" else "${vm.sleepMinutes} min", "Sleep timer", Modifier.weight(1f)) {
+                vm.cycleSleepTimer()
             }
             val downloaded = videoId != null && videoId in vm.downloaded
             val downloading = videoId != null && videoId in vm.downloading
-            SmallControl(
-                when { downloaded -> Glyph.DOWNLOADED; downloading -> Glyph.PENDING; else -> Glyph.DOWNLOAD },
-                when { downloaded -> "Downloaded"; downloading -> "Downloading"; else -> "Download" },
+            OptionButton(
+                when { downloaded -> "On device"; downloading -> "Saving…"; else -> "Download" },
+                "Download",
                 Modifier.weight(1f),
             ) {
                 if (videoId != null && !downloaded && !downloading) {
                     vm.download(app.lull.core.Track(videoId, state.title, state.artist, (state.durationMs / 1000).toInt().takeIf { it > 0 }))
                 }
             }
-            SmallControl(Glyph.MOON, if (vm.sleepMinutes == 0) "Sleep" else "${vm.sleepMinutes} min", Modifier.weight(1f)) {
-                vm.cycleSleepTimer()
+            val isLiked = videoId != null && vm.liked[videoId] == true
+            OptionButton(if (isLiked) "Liked" else "Like", "Like", Modifier.weight(1f), bold = isLiked) {
+                videoId?.let(vm::toggleLike)
             }
-            SmallControl(Glyph.FAST, formatSpeed(state.speed), Modifier.weight(1f)) { vm.player.cycleSpeed() }
         }
     }
 }
@@ -131,29 +158,59 @@ fun NowPlayingScreen(vm: AppViewModel) {
 private fun formatSpeed(speed: Float): String =
     (if (speed % 1f == 0f) "%.0f".format(speed) else "%.2f".format(speed).trimEnd('0')) + "×"
 
+/**
+ * Where you are. In a series (2 to 24 items) each segment is one part: filled when done,
+ * partly filled for the current one. Otherwise one bar for the current item.
+ */
 @Composable
-private fun BigControl(glyph: Glyph, label: String, filled: Boolean, onClick: () -> Unit) {
-    Box(
-        Modifier.size(104.dp)
-            .background(if (filled) Ink else Paper, RoundedCornerShape(16.dp))
-            .border(2.dp, Ink, RoundedCornerShape(16.dp))
-            .clickable(role = Role.Button, onClick = onClick)
-            .semantics { contentDescription = label },
-        contentAlignment = Alignment.Center,
-    ) { LineIcon(glyph, size = 42.dp, color = if (filled) Paper else Ink) }
+private fun ProgressStrip(state: PlayerUi) {
+    val fraction = if (state.durationMs > 0) (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f) else 0f
+    val total = state.queue.size
+    if (total in 2..24) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            repeat(total) { i ->
+                val fill = when {
+                    i < state.index -> 1f
+                    i == state.index -> fraction
+                    else -> 0f
+                }
+                Segment(fill, Modifier.weight(1f).height(10.dp), RoundedCornerShape(2.dp))
+            }
+        }
+    } else {
+        Segment(fraction, Modifier.fillMaxWidth().height(10.dp), RoundedCornerShape(5.dp))
+    }
 }
 
 @Composable
-private fun SmallControl(glyph: Glyph, label: String, modifier: Modifier, onClick: () -> Unit) {
-    Column(
-        modifier.height(68.dp)
+private fun Segment(fill: Float, modifier: Modifier, shape: Shape) {
+    Box(modifier.clip(shape).border(2.dp, Ink, shape)) {
+        if (fill > 0f) Box(Modifier.fillMaxHeight().fillMaxWidth(fill).background(Ink))
+    }
+}
+
+@Composable
+private fun TextLink(label: String, enabled: Boolean, onClick: () -> Unit) {
+    TextMMD(
+        label, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = if (enabled) Ink else Muted,
+        modifier = Modifier.heightIn(min = 48.dp)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 13.dp),
+    )
+}
+
+@Composable
+private fun OptionButton(text: String, label: String, modifier: Modifier, bold: Boolean = true, onClick: () -> Unit) {
+    Box(
+        modifier.height(52.dp)
             .border(2.dp, Ink, RoundedCornerShape(12.dp))
-            .clickable(role = Role.Button, onClick = onClick),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = "$label: $text" },
+        contentAlignment = Alignment.Center,
     ) {
-        LineIcon(glyph, size = 22.dp)
-        TextMMD(label, fontSize = 14.sp, textAlign = TextAlign.Center, maxLines = 1)
+        TextMMD(text, fontSize = 15.sp, fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
+            textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 4.dp))
     }
 }
 
@@ -175,7 +232,7 @@ fun QueueScreen(vm: AppViewModel) {
 
         val upcoming = state.upcoming
         TextMMD(
-            "Up next · ${upcoming.size} ${if (upcoming.size == 1) "song" else "songs"}",
+            "Up next · ${upcoming.size}",
             fontSize = 15.sp, color = Muted, modifier = Modifier.padding(start = 24.dp, top = 16.dp, bottom = 4.dp),
         )
         upcoming.take(MAX_SHOWN).forEachIndexed { i, entry ->

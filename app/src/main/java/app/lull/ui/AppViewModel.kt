@@ -61,23 +61,39 @@ class Paged<T>(
     var exhausted by mutableStateOf(false)
         private set
 
-    val pageItems: List<T> get() = items.drop(page * pageSize).take(pageSize)
+    /** Shown oldest-first: the whole list is loaded (up to [MAX_ALL]) and paged in reverse. */
+    var reversed by mutableStateOf(false)
+        private set
+    private var capped by mutableStateOf(false)
+
+    /** True once every item that will be shown is here, so counts and reversed order are final. */
+    val complete: Boolean get() = exhausted || capped
+    val ordered: List<T> get() = if (reversed) items.asReversed() else items
+
+    val pageItems: List<T> get() = ordered.drop(page * pageSize).take(pageSize)
     val hasPrevious: Boolean get() = page > 0
-    val hasNext: Boolean get() = (page + 1) * pageSize < items.size || !exhausted
+    val hasNext: Boolean get() = (page + 1) * pageSize < items.size || (!reversed && !exhausted)
     val pageLabel: String
         get() {
             val pages = maxOf(1, (items.size + pageSize - 1) / pageSize)
-            return "Page ${page + 1} of $pages" + if (exhausted) "" else "+"
+            return "Page ${page + 1} of $pages" + if (complete || reversed) "" else "+"
         }
 
     fun start() {
-        items = emptyList(); page = 0; continuation = null; exhausted = false; started = true
+        items = emptyList(); page = 0; continuation = null; exhausted = false; capped = false; started = true
         fetch()
+    }
+
+    fun setOrder(reverse: Boolean) {
+        if (reversed == reverse) return
+        reversed = reverse
+        page = 0
+        if (reverse && started) loadAll()
     }
 
     fun next() {
         if ((page + 1) * pageSize < items.size) page++
-        else fetch { if ((page + 1) * pageSize < items.size) page++ }
+        else if (!reversed) fetch { if ((page + 1) * pageSize < items.size) page++ }
     }
 
     fun previous() {
@@ -90,22 +106,49 @@ class Paged<T>(
         error = null
         scope.launch {
             try {
-                val result = load(continuation)
-                val before = items.size
-                items = (items + result.items).distinct()
-                continuation = result.continuation
-                exhausted = continuation == null || items.size == before
-                after()
-            } catch (e: Exception) {
-                error = if (e is InnerTubeException && e.isAuthError) {
-                    "Your session expired. Sign in again in Settings."
-                } else {
-                    "Couldn't load. Check your connection and try again."
+                if (fetchOnce()) after()
+            } finally {
+                loading = false
+            }
+            if (reversed && !complete && error == null) loadAll()
+        }
+    }
+
+    /** Keeps fetching pages until the list ends (or [MAX_ALL]), for oldest-first order. */
+    private fun loadAll() {
+        if (loading || complete) return
+        loading = true
+        error = null
+        scope.launch {
+            try {
+                while (!exhausted) {
+                    if (items.size >= MAX_ALL) { capped = true; break }
+                    if (!fetchOnce()) break
                 }
             } finally {
                 loading = false
             }
         }
+    }
+
+    private suspend fun fetchOnce(): Boolean = try {
+        val result = load(continuation)
+        val before = items.size
+        items = (items + result.items).distinct()
+        continuation = result.continuation
+        exhausted = continuation == null || items.size == before
+        true
+    } catch (e: Exception) {
+        error = if (e is InnerTubeException && e.isAuthError) {
+            "Your session expired. Sign in again in Settings."
+        } else {
+            "Couldn't load. Check your connection and try again."
+        }
+        false
+    }
+
+    private companion object {
+        const val MAX_ALL = 500
     }
 }
 
@@ -160,8 +203,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val collections = HashMap<String, Paged<Track>>()
     fun collectionTracks(browseId: String): Paged<Track> = collections.getOrPut(browseId) {
-        Paged(viewModelScope) { cont -> repo.collectionTracks(browseId, cont) }
+        Paged<Track>(viewModelScope) { cont -> repo.collectionTracks(browseId, cont) }
+            .apply { setOrder(AppGraph.settings.isReversed(browseId)) }
     }
+
+    /** Oldest-first for podcasts and playlists, remembered per list. */
+    fun setReversed(browseId: String, reversed: Boolean) {
+        AppGraph.settings.setReversed(browseId, reversed)
+        collectionTracks(browseId).setOrder(reversed)
+    }
+
+    // --- listening progress ---------------------------------------------------------------
+    val resume get() = AppGraph.resume
 
     fun likedSongs() = MusicCollection(InnerTube.LIKED_SONGS, "Liked songs", "Your liked songs", CollectionKind.PLAYLIST)
 
