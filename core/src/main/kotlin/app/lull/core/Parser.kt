@@ -53,6 +53,10 @@ object Parser {
         return null
     }
 
+    /** Your own playlists have an editable header (rename, edit) instead of a Save button. */
+    fun isEditable(root: JsonElement): Boolean =
+        findAll(root, "musicEditablePlaylistDetailHeaderRenderer").isNotEmpty()
+
     /** Playlists offered by "Add to playlist": only ones you can edit. */
     fun playlistTargets(root: JsonElement): List<PlaylistTarget> =
         findAll(root, "playlistAddToOptionRenderer").mapNotNull { r ->
@@ -105,7 +109,8 @@ object Parser {
         val fixed = runsText(path(r, "fixedColumns", 0, "musicResponsiveListItemFixedColumnRenderer", "text"))
         val duration = parseDuration(fixed) ?: texts.firstNotNullOfOrNull { parseDuration(it) }
             ?: texts.firstNotNullOfOrNull { parseSpokenDuration(it) }
-        return Track(videoId, title, artist, duration)
+        val setVideoId = path(r, "playlistItemData", "playlistSetVideoId").str()
+        return Track(videoId, title, artist, duration, setVideoId)
     }
 
     /** A podcast episode row on a show page: title, then "Oct 5, 2026 • 58 min". */

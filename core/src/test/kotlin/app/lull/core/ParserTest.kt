@@ -113,4 +113,20 @@ class ParserTest {
             Parser.playlistTargets(Json.parseToJsonElement(json)),
         )
     }
+
+    @Test
+    fun readsPlaylistEntryIdsAndOwnership() {
+        val json = """
+        {"header":{"musicEditablePlaylistDetailHeaderRenderer":{}},
+         "contents":[{"musicResponsiveListItemRenderer":{
+           "playlistItemData":{"videoId":"vid00000001","playlistSetVideoId":"SET1"},
+           "flexColumns":[
+             {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Je te veux"}]}}},
+             {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Erik Satie"}]}}}
+           ]}}]}
+        """.trimIndent()
+        val root = Json.parseToJsonElement(json)
+        assertEquals("SET1", Parser.tracks(root).single().setVideoId)
+        assertEquals(true, Parser.isEditable(root))
+    }
 }

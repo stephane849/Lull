@@ -77,6 +77,7 @@ class InnerTube(
         return CollectionPage(
             Page(Parser.tracks(root), Parser.continuation(root)),
             if (continuation == null) Parser.libraryState(root) else null,
+            continuation == null && browseId != LIKED_SONGS && Parser.isEditable(root),
         )
     }
 
@@ -98,6 +99,50 @@ class InnerTube(
             put("addedVideoId", videoId)
             put("dedupeOption", "DEDUPE_OPTION_SKIP")
         }
+        post(
+            "browse/edit_playlist",
+            mapOf("playlistId" to JsonPrimitive(playlistId.removePrefix("VL")), "actions" to buildJsonArray { add(action) }),
+            null,
+        )
+    }
+
+    /**
+     * Moves an entry of your playlist so it sits just before [beforeSetVideoId], or last when
+     * that is null (done as two moves, since YouTube only moves "before" something).
+     */
+    fun movePlaylistItem(playlistId: String, setVideoId: String, beforeSetVideoId: String?, lastSetVideoId: String?) {
+        if (beforeSetVideoId != null) {
+            editPlaylist(playlistId, moveAction(setVideoId, beforeSetVideoId))
+        } else if (lastSetVideoId != null && lastSetVideoId != setVideoId) {
+            editPlaylist(playlistId, moveAction(setVideoId, lastSetVideoId))
+            editPlaylist(playlistId, moveAction(lastSetVideoId, setVideoId))
+        }
+    }
+
+    fun removePlaylistItem(playlistId: String, setVideoId: String, videoId: String) =
+        editPlaylist(playlistId, buildJsonObject {
+            put("action", "ACTION_REMOVE_VIDEO")
+            put("setVideoId", setVideoId)
+            put("removedVideoId", videoId)
+        })
+
+    fun renamePlaylist(playlistId: String, name: String) =
+        editPlaylist(playlistId, buildJsonObject {
+            put("action", "ACTION_SET_PLAYLIST_NAME")
+            put("playlistName", name)
+        })
+
+    fun deletePlaylist(playlistId: String) {
+        post("playlist/delete", mapOf("playlistId" to JsonPrimitive(playlistId.removePrefix("VL"))), null)
+    }
+
+    private fun moveAction(setVideoId: String, beforeSetVideoId: String) = buildJsonObject {
+        put("action", "ACTION_MOVE_VIDEO_BEFORE")
+        put("setVideoId", setVideoId)
+        put("movedSetVideoIdSuccessor", beforeSetVideoId)
+    }
+
+    private fun editPlaylist(playlistId: String, action: JsonObject) {
         post(
             "browse/edit_playlist",
             mapOf("playlistId" to JsonPrimitive(playlistId.removePrefix("VL")), "actions" to buildJsonArray { add(action) }),

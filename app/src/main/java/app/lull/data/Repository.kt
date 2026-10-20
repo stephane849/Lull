@@ -35,6 +35,13 @@ class Repository(private val api: InnerTube) {
     suspend fun addToPlaylist(playlistId: String, videoId: String) = io { api.addToPlaylist(playlistId, videoId) }
     suspend fun createPlaylist(title: String, videoIds: List<String>): String? = io { api.createPlaylist(title, videoIds) }
 
+    suspend fun movePlaylistItem(playlistId: String, setVideoId: String, before: String?, last: String?) =
+        io { api.movePlaylistItem(playlistId, setVideoId, before, last) }
+    suspend fun removePlaylistItem(playlistId: String, setVideoId: String, videoId: String) =
+        io { api.removePlaylistItem(playlistId, setVideoId, videoId) }
+    suspend fun renamePlaylist(playlistId: String, name: String) = io { api.renamePlaylist(playlistId, name) }
+    suspend fun deletePlaylist(playlistId: String) = io { api.deletePlaylist(playlistId) }
+
     suspend fun radio(videoId: String): List<Track> = io { api.radio(videoId) }
 
     suspend fun setLiked(videoId: String, liked: Boolean) = io { api.setLiked(videoId, liked) }

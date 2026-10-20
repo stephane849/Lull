@@ -1,5 +1,13 @@
 package app.lull.ui.screens
 
+import androidx.compose.foundation.layout.RowScope
+import app.lull.ui.components.RowText
+import app.lull.ui.components.ReorderState
+import app.lull.ui.components.ReorderList
+import app.lull.ui.components.ReorderBar
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import app.lull.ui.components.LONG_ITEM_MS
 import app.lull.ui.components.formatLeft
 import app.lull.ui.components.SkipButton
@@ -239,10 +247,36 @@ private fun OptionButton(text: String, label: String, modifier: Modifier, bold: 
 @Composable
 fun QueueScreen(vm: AppViewModel) {
     val state by vm.player.state.collectAsStateWithLifecycle()
+    var editing by remember { mutableStateOf(false) }
+    val reorder = remember { ReorderState() }
+    // Upcoming entry u is queue item index + 1 + u.
+    val base = state.index + 1
+    val move: (Int, Int) -> Unit = { f, t -> vm.player.moveItem(base + f, base + t) }
+    val remove: (Int) -> Unit = { u -> vm.player.removeAt(base + u) }
+    val bar: @Composable () -> Unit = { ReorderBar(reorder, state.upcoming.size, move, remove) }
+    val editAction: @Composable RowScope.() -> Unit = {
+        TextMMD(if (editing) "Done" else "Edit", fontSize = 18.sp, fontWeight = FontWeight.Bold,
+            modifier = Modifier.clickable(role = Role.Button) { editing = !editing; reorder.clear() }.padding(14.dp))
+    }
 
-    ScreenFrame(title = "Queue", onBack = { vm.back() }) {
+    ScreenFrame(
+        title = "Queue",
+        onBack = { vm.back() },
+        action = if (state.upcoming.isNotEmpty()) editAction else null,
+        bottom = if (editing && state.upcoming.isNotEmpty()) bar else null,
+    ) {
         if (!state.hasMedia) {
             TextMMD("The queue is empty.", fontSize = 18.sp, color = Muted, modifier = Modifier.padding(24.dp))
+            return@ScreenFrame
+        }
+        if (editing) {
+            Column(Modifier.padding(horizontal = 24.dp, vertical = 16.dp)) {
+                TextMMD("Playing now", fontSize = 15.sp, color = Muted)
+                TextMMD(state.title, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                TextMMD("Up next · tap one to change it", fontSize = 15.sp, color = Muted, modifier = Modifier.padding(top = 10.dp))
+            }
+            HorizontalDividerMMD(thickness = 2.dp, color = Ink)
+            ReorderList(reorder, state.upcoming.map { RowText(it.title, it.artist) }, move)
             return@ScreenFrame
         }
         Column(Modifier.padding(horizontal = 24.dp, vertical = 20.dp)) {

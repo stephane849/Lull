@@ -40,6 +40,7 @@ sealed interface Screen {
     data object SignIn : Screen
     data class TrackActions(val track: Track) : Screen
     data class AddToPlaylist(val track: Track) : Screen
+    data class EditPlaylist(val collection: MusicCollection) : Screen
 }
 
 /**
@@ -89,6 +90,14 @@ class Paged<T>(
         fetch()
     }
 
+    private var wantAll = false
+
+    /** Loads every item (up to [MAX_ALL]), for editing. */
+    fun loadEverything() {
+        wantAll = true
+        if (!started) start() else loadAll()
+    }
+
     fun setOrder(reverse: Boolean) {
         if (reversed == reverse) return
         reversed = reverse
@@ -115,7 +124,7 @@ class Paged<T>(
             } finally {
                 loading = false
             }
-            if (reversed && !complete && error == null) loadAll()
+            if ((reversed || wantAll) && !complete && error == null) loadAll()
         }
     }
 
@@ -168,7 +177,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val stack = mutableStateListOf<Screen>(Screen.Start)
     val screen: Screen get() = stack.last()
     fun go(screen: Screen) { stack.add(screen) }
-    fun back(): Boolean = if (stack.size > 1) { stack.removeAt(stack.lastIndex); true } else false
+    fun back(): Boolean {
+        if (stack.size <= 1) return false
+        // Leaving the editor (Done or the system back): the playlist page reloads its new order.
+        (stack.last() as? Screen.EditPlaylist)?.let { collections.remove(it.collection.browseId) }
+        stack.removeAt(stack.lastIndex)
+        return true
+    }
 
     // --- account ------------------------------------------------------------------------
     var signedIn by mutableStateOf(repo.isSignedIn)
@@ -213,8 +228,111 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         Paged<Track>(viewModelScope) { cont ->
             val page = repo.collectionPage(browseId, cont)
             page.library?.let { libraryStates[browseId] = it }
+            if (cont == null && page.editable) editable.add(browseId)
             page.tracks
         }.apply { setOrder(AppGraph.settings.isReversed(browseId)) }
+    }
+
+    // --- editing your playlists --------------------------------------------------------------
+    /** Browse ids of playlists you own (seen with an editable header). */
+    val editable = androidx.compose.runtime.mutableStateListOf<String>()
+
+    /** The working copy of the playlist being edited, in server order. */
+    val editItems = androidx.compose.runtime.mutableStateListOf<Track>()
+    var editTitle by mutableStateOf("")
+        private set
+    var editError by mutableStateOf<String?>(null)
+        private set
+    var editBusy by mutableStateOf(false)
+        private set
+    private var editingId: String? = null
+
+    fun startEditing(collection: MusicCollection) {
+        editingId = collection.browseId
+        editTitle = collection.title
+        editError = null
+        editItems.clear()
+        collectionTracks(collection.browseId).loadEverything()
+    }
+
+    /** Called as pages arrive; fills the working copy once the whole list is in. */
+    fun syncEditItems(paged: Paged<Track>) {
+        if (paged.complete && editItems.isEmpty() && paged.items.isNotEmpty()) editItems.addAll(paged.items)
+    }
+
+    val canEditItems: Boolean get() = editItems.isNotEmpty() && editItems.all { it.setVideoId != null }
+
+    fun moveItem(from: Int, to: Int) {
+        val id = editingId ?: return
+        if (from == to || from !in editItems.indices || to !in editItems.indices) return
+        val before = editItems.toList()
+        val moved = editItems.removeAt(from)
+        editItems.add(to, moved)
+        val successor = editItems.getOrNull(to + 1)?.setVideoId
+        val last = editItems.getOrNull(editItems.lastIndex - 1)?.setVideoId
+        editRequest(before) { repo.movePlaylistItem(id, moved.setVideoId!!, successor, if (successor == null) last else null) }
+    }
+
+    fun removeItem(index: Int) {
+        val id = editingId ?: return
+        if (index !in editItems.indices) return
+        val before = editItems.toList()
+        val t = editItems.removeAt(index)
+        editRequest(before) { repo.removePlaylistItem(id, t.setVideoId!!, t.videoId) }
+    }
+
+    fun renameEditing(name: String) {
+        val id = editingId ?: return
+        val clean = name.trim()
+        if (clean.isEmpty() || clean == editTitle) return
+        val old = editTitle
+        editTitle = clean
+        viewModelScope.launch {
+            runCatching { repo.renamePlaylist(id, clean) }
+                .onSuccess { renameInStack(id, clean); shelves.remove(InnerTube.LIBRARY_PLAYLISTS) }
+                .onFailure { editTitle = old; editError = "Couldn't rename. Try again." }
+        }
+    }
+
+    fun deleteEditing() {
+        val id = editingId ?: return
+        editBusy = true
+        viewModelScope.launch {
+            runCatching { repo.deletePlaylist(id) }
+                .onSuccess {
+                    shelves.remove(InnerTube.LIBRARY_PLAYLISTS)
+                    collections.remove(id)
+                    // Leave both the edit screen and the playlist's page.
+                    stack.removeAll { it is Screen.EditPlaylist || (it is Screen.Collection && it.collection.browseId == id) }
+                    if (stack.isEmpty()) stack.add(Screen.Start)
+                }
+                .onFailure { editError = "Couldn't delete the playlist." }
+            editBusy = false
+        }
+    }
+
+    /** Done: the playlist page reloads with the new order. */
+    fun finishEditing() {
+        editingId = null
+        back()
+    }
+
+    private fun editRequest(before: List<Track>, call: suspend () -> Unit) {
+        editError = null
+        viewModelScope.launch {
+            runCatching { call() }.onFailure {
+                editItems.clear(); editItems.addAll(before)
+                editError = "Couldn't save that change. It's been undone."
+            }
+        }
+    }
+
+    private fun renameInStack(browseId: String, title: String) {
+        for (i in stack.indices) {
+            val sc = stack[i]
+            if (sc is Screen.Collection && sc.collection.browseId == browseId) stack[i] = Screen.Collection(sc.collection.copy(title = title))
+            if (sc is Screen.EditPlaylist && sc.collection.browseId == browseId) stack[i] = Screen.EditPlaylist(sc.collection.copy(title = title))
+        }
     }
 
     // --- saving to library ----------------------------------------------------------------

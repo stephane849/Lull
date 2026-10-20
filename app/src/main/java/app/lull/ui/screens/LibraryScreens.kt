@@ -163,7 +163,8 @@ fun CollectionScreen(vm: AppViewModel, collection: MusicCollection) {
             if (meta.isNotEmpty()) TextMMD(meta, fontSize = 16.sp, color = Muted, modifier = Modifier.padding(top = 8.dp))
             val library = vm.libraryStates[collection.browseId]
             val showOrder = canReverse && tracks.size > 1
-            if (library != null || showOrder) {
+            val canEdit = collection.browseId in vm.editable
+            if (library != null || showOrder || canEdit) {
                 Row(
                     Modifier.padding(top = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -171,6 +172,14 @@ fun CollectionScreen(vm: AppViewModel, collection: MusicCollection) {
                 ) {
                     if (library != null) {
                         SavePill(library.saved) { vm.toggleSaved(collection.browseId) }
+                    }
+                    if (canEdit) {
+                        Row(
+                            Modifier.height(44.dp).border(2.dp, Ink, RoundedCornerShape(22.dp))
+                                .clickable(role = Role.Button) { vm.go(Screen.EditPlaylist(collection)) }
+                                .padding(horizontal = 18.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) { TextMMD("Edit", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
                     }
                     if (showOrder) {
                         val label = when {

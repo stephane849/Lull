@@ -158,6 +158,7 @@ class PlayerConnection(context: Context, scope: CoroutineScope) {
     fun next() = controller?.seekToNextMediaItem()
     fun previous() = controller?.seekToPrevious()
     fun removeAt(index: Int) = controller?.removeMediaItem(index)
+    fun moveItem(from: Int, to: Int) = controller?.moveMediaItem(from, to)
 
     fun clearUpcoming() {
         val c = controller ?: return

@@ -6,6 +6,8 @@ data class Track(
     val title: String,
     val artist: String,
     val durationSec: Int? = null,
+    /** This entry's id inside one of your playlists; needed to move or remove it there. */
+    val setVideoId: String? = null,
 )
 
 enum class CollectionKind { PLAYLIST, ALBUM, ARTIST, PODCAST, OTHER }
@@ -40,5 +42,8 @@ data class LibraryState(val playlistId: String, val saved: Boolean)
 /** A playlist you can add songs to. */
 data class PlaylistTarget(val playlistId: String, val title: String)
 
-/** One page of a collection's tracks; [library] is read from the first page only. */
-data class CollectionPage(val tracks: Page<Track>, val library: LibraryState?)
+/**
+ * One page of a collection's tracks. [library] and [editable] are read from the first page
+ * only: [editable] is true for playlists you own.
+ */
+data class CollectionPage(val tracks: Page<Track>, val library: LibraryState?, val editable: Boolean = false)
