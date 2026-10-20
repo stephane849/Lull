@@ -29,6 +29,9 @@ import app.lull.data.YouTube
 import app.lull.download.Downloads
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -283,12 +286,49 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             musicLoading = true
             musicError = null
             viewModelScope.launch {
-                runCatching { repo.searchSections(q) }
-                    .onSuccess { musicSections = it }
-                    .onFailure { musicSections = emptyList(); musicError = "Couldn't search. Check your connection." }
+                // One all-in-one search first; if YouTube Music's layout changed and nothing
+                // usable comes back, fall back to one search per kind (the older, proven path).
+                val all = runCatching { repo.searchSections(q) }
+                var sections = all.getOrNull().orEmpty().filter { usableSection(it.title) }
+                var failure = all.exceptionOrNull()
+                if (sections.isEmpty()) {
+                    val (fallback, error) = searchByKind(q)
+                    sections = fallback
+                    if (failure == null) failure = error
+                }
+                musicSections = sections
+                musicError = if (sections.isEmpty() && failure != null) {
+                    "Couldn't search YouTube Music (${failure.message ?: "no connection"})."
+                } else null
                 musicLoading = false
             }
         }
+    }
+
+    private fun usableSection(title: String): Boolean {
+        val t = title.lowercase()
+        return t in setOf("songs", "episodes", "podcasts", "albums", "artists") || "playlist" in t
+    }
+
+    /** Six small filtered searches in parallel, shaped like the all-in-one sections. */
+    private suspend fun searchByKind(q: String): Pair<List<SearchSection>, Throwable?> = coroutineScope {
+        val kinds = listOf(
+            SearchFilter.SONGS to "Songs", SearchFilter.EPISODES to "Episodes", SearchFilter.PODCASTS to "Podcasts",
+            SearchFilter.ALBUMS to "Albums", SearchFilter.ARTISTS to "Artists", SearchFilter.PLAYLISTS to "Playlists",
+        )
+        var error: Throwable? = null
+        val sections = kinds.map { (filter, title) ->
+            async {
+                runCatching {
+                    if (filter == SearchFilter.SONGS || filter == SearchFilter.EPISODES) {
+                        SearchSection(title, repo.searchTracks(q, null, filter).items.take(3), emptyList())
+                    } else {
+                        SearchSection(title, emptyList(), repo.searchCollections(q, filter).items.take(3))
+                    }
+                }.onFailure { error = it }.getOrNull()
+            }
+        }.awaitAll().filterNotNull().filter { it.tracks.isNotEmpty() || it.collections.isNotEmpty() }
+        sections to error
     }
 
     /** "More ›" from a section: the full, paged list of that kind. */
