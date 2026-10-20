@@ -34,6 +34,9 @@ enum class SearchFilter(val params: String) {
     PLAYLISTS("EgeKAQQoAEABagoQAxAEEAoQCRAF"),
     PODCASTS("EgWKAQJQAWoMEA4QChADEAQQCRAF"),
     EPISODES("EgWKAQJIAWoMEA4QChADEAQQCRAF"),
+    VIDEOS("EgWKAQIQAWoMEA4QChADEAQQCRAF"),
+    /** All of YouTube, searched through NewPipe rather than YouTube Music. */
+    YOUTUBE(""),
 }
 
 /** Whether a playlist, album or podcast is in your library, and the id used to change that. */

@@ -20,8 +20,11 @@ import app.lull.core.Page
 import app.lull.core.PlaylistTarget
 import app.lull.core.SearchFilter
 import app.lull.core.Subscription
+import app.lull.core.SharedLink
+import app.lull.core.YouTubeLinks
 import app.lull.core.Track
 import app.lull.data.Series
+import app.lull.data.YouTube
 import app.lull.download.Downloads
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -43,6 +46,8 @@ sealed interface Screen {
     data class AddToPlaylist(val track: Track) : Screen
     data class EditPlaylist(val collection: MusicCollection) : Screen
     data class CollectionActions(val collection: MusicCollection) : Screen
+    /** A link shared from YouTube, being looked up. */
+    data class Shared(val text: String) : Screen
 }
 
 /**
@@ -204,13 +209,41 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         signedIn = false
     }
 
+    // --- YouTube: search and shared links -------------------------------------------------
+    private val youTube = YouTube()
+    var sharedError by mutableStateOf<String?>(null)
+        private set
+
+    fun openShared(text: String) {
+        sharedError = null
+        go(Screen.Shared(text))
+    }
+
+    /** Swaps the "Opening…" screen for the video's actions or the playlist's page. */
+    fun resolveShared(screen: Screen.Shared) {
+        viewModelScope.launch {
+            val next: Screen? = runCatching {
+                when (val link = YouTubeLinks.parse(screen.text)) {
+                    is SharedLink.Video -> Screen.TrackActions(youTube.video(link.videoId))
+                    is SharedLink.Playlist -> Screen.Collection(youTube.playlist(link.playlistId))
+                    null -> null
+                }
+            }.getOrElse { sharedError = "Couldn't open that link. Check your connection."; return@launch }
+            if (next == null) { sharedError = "That doesn't look like a YouTube link."; return@launch }
+            val i = stack.lastIndexOf(screen)
+            if (i >= 0) stack[i] = next
+        }
+    }
+
     // --- search -------------------------------------------------------------------------
     var query by mutableStateOf("")
     var filter by mutableStateOf(SearchFilter.SONGS)
         private set
     val searchResults = Paged<Any>(viewModelScope) { cont ->
         val q = query.trim()
-        if (filter == SearchFilter.SONGS || filter == SearchFilter.EPISODES) {
+        if (filter == SearchFilter.YOUTUBE) {
+            youTube.search(q, cont).let { Page(it.items, it.continuation) }
+        } else if (filter == SearchFilter.SONGS || filter == SearchFilter.EPISODES || filter == SearchFilter.VIDEOS) {
             repo.searchTracks(q, cont, filter).let { Page(it.items, it.continuation) }
         }
         else repo.searchCollections(q, filter, cont).let { Page(it.items, it.continuation) }

@@ -1,6 +1,7 @@
 package app.lull.ui
 
 import android.Manifest
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -25,10 +26,23 @@ import app.lull.ui.screens.TrackActionsScreen
 import app.lull.ui.screens.AddToPlaylistScreen
 import app.lull.ui.screens.EditPlaylistScreen
 import app.lull.ui.screens.CollectionActionsScreen
+import app.lull.ui.screens.SharedScreen
 import app.lull.ui.screens.StartScreen
 import com.mudita.mmd.ThemeMMD
 
 class MainActivity : ComponentActivity() {
+
+    /** "Share → Lull" from the YouTube app or a browser. */
+    private fun handleShare(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_SEND) return
+        val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return
+        vm.openShared(text)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleShare(intent)
+    }
 
     private val vm: AppViewModel by viewModels()
 
@@ -38,6 +52,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= 33) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        if (savedInstanceState == null) handleShare(intent)
         setContent {
             // MMD: monochrome colours, Lato typography, ripple off.
             ThemeMMD {
@@ -68,5 +83,6 @@ private fun LullRoot(vm: AppViewModel) {
         is Screen.AddToPlaylist -> AddToPlaylistScreen(vm, screen.track)
         is Screen.EditPlaylist -> EditPlaylistScreen(vm, screen.collection)
         is Screen.CollectionActions -> CollectionActionsScreen(vm, screen.collection)
+        is Screen.Shared -> SharedScreen(vm, screen)
     }
 }

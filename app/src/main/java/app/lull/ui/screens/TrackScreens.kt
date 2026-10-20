@@ -140,3 +140,12 @@ private fun ActionRow(glyph: Glyph, label: String, onClick: () -> Unit) {
         trailing = { LineIcon(glyph, Modifier.padding(end = 14.dp)) },
     )
 }
+
+/** Shown for a moment while a shared YouTube link is looked up. */
+@Composable
+fun SharedScreen(vm: AppViewModel, screen: Screen.Shared) {
+    LaunchedEffect(screen) { vm.resolveShared(screen) }
+    ScreenFrame(title = "From YouTube", onBack = { vm.back() }) {
+        TextMMD(vm.sharedError ?: "Opening…", fontSize = 18.sp, color = Muted, modifier = Modifier.padding(24.dp))
+    }
+}

@@ -56,7 +56,7 @@ fun SearchScreen(vm: AppViewModel) {
             value = vm.query,
             onValueChange = { vm.query = it },
             singleLine = true,
-            placeholder = { TextMMD("Search YouTube Music", fontSize = 18.sp) },
+            placeholder = { TextMMD(if (vm.filter == SearchFilter.YOUTUBE) "Search all of YouTube" else "Search YouTube Music", fontSize = 18.sp) },
             // Keep MMD's Lato; only enlarge it.
             textStyle = androidx.compose.material3.LocalTextStyle.current.copy(fontSize = 19.sp),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -97,9 +97,11 @@ private fun FilterTabs(selected: SearchFilter, onSelect: (SearchFilter) -> Unit)
         SearchFilter.PLAYLISTS to "Playlists",
         SearchFilter.PODCASTS to "Podcasts",
         SearchFilter.EPISODES to "Episodes",
+        SearchFilter.VIDEOS to "Videos",
+        SearchFilter.YOUTUBE to "YouTube",
     )
-    // Two rows of three so every label fits the Kompakt's narrow screen.
-    labels.chunked(3).forEach { row ->
+    // Two rows of four so every label fits the Kompakt's narrow screen.
+    labels.chunked(4).forEach { row ->
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)
             .border(2.dp, Ink, RoundedCornerShape(10.dp)),
@@ -115,7 +117,8 @@ private fun FilterTabs(selected: SearchFilter, onSelect: (SearchFilter) -> Unit)
             ) {
                 TextMMD(
                     label,
-                    fontSize = 15.sp,
+                    fontSize = 14.sp,
+                    maxLines = 1,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                     color = if (isSelected) Paper else Ink,
                 )
