@@ -256,21 +256,25 @@ fun PlayPauseButton(isPlaying: Boolean, onClick: () -> Unit, size: Int) {
     ) { LineIcon(if (isPlaying) Glyph.PAUSE else Glyph.PLAY, size = (size * 0.4f).dp, color = Paper) }
 }
 
-/** A round outlined skip button: arrow on top, seconds underneath. */
+/** A round outlined button: arrow with seconds underneath, or just a track icon. */
 @Composable
-fun SkipButton(glyph: Glyph, seconds: String, label: String, onClick: () -> Unit, size: Int = 84) {
+fun SkipButton(glyph: Glyph, seconds: String?, label: String, onClick: () -> Unit, size: Int = 84, enabled: Boolean = true) {
     val big = size >= 70
     Column(
         Modifier.size(size.dp)
-            .border(2.5.dp, Ink, CircleShape)
-            .clickable(role = Role.Button, onClick = onClick)
+            .border(2.5.dp, if (enabled) Ink else Muted, CircleShape)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .semantics(mergeDescendants = true) { contentDescription = label },
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        LineIcon(glyph, size = if (big) 26.dp else 18.dp)
-        TextMMD(seconds, fontSize = if (big) 17.sp else 12.sp, fontWeight = FontWeight.Black,
-            lineHeight = if (big) 18.sp else 13.sp)
+        if (seconds == null) {
+            LineIcon(glyph, size = if (big) 34.dp else 22.dp, color = if (enabled) Ink else Muted)
+        } else {
+            LineIcon(glyph, size = if (big) 26.dp else 18.dp)
+            TextMMD(seconds, fontSize = if (big) 17.sp else 12.sp, fontWeight = FontWeight.Black,
+                lineHeight = if (big) 18.sp else 13.sp)
+        }
     }
 }
 

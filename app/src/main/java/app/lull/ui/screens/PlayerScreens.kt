@@ -1,5 +1,6 @@
 package app.lull.ui.screens
 
+import app.lull.ui.components.LONG_ITEM_MS
 import app.lull.ui.components.formatLeft
 import app.lull.ui.components.SkipButton
 import app.lull.ui.components.PlayPauseButton
@@ -88,6 +89,7 @@ fun NowPlayingScreen(vm: AppViewModel) {
         }
 
         val total = state.queue.size
+        val long = state.durationMs >= LONG_ITEM_MS
         Column(Modifier.padding(start = 28.dp, end = 28.dp, top = 28.dp)) {
             val where = listOfNotNull(state.source, if (total > 1) "${state.index + 1} of $total" else null).joinToString(" · ")
             if (where.isNotEmpty()) TextMMD(where, fontSize = 16.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -101,7 +103,7 @@ fun NowPlayingScreen(vm: AppViewModel) {
             ProgressStrip(state)
             Row(Modifier.padding(top = 8.dp)) {
                 TextMMD("${formatMs(state.positionMs)} of ${formatMs(state.durationMs)}", fontSize = 17.sp)
-                if (state.durationMs > 0) {
+                if (long) {
                     TextMMD(" · ", fontSize = 17.sp)
                     TextMMD(formatLeft((state.durationMs - state.positionMs).coerceAtLeast(0)), fontSize = 17.sp,
                         fontWeight = FontWeight.Bold)
@@ -109,22 +111,35 @@ fun NowPlayingScreen(vm: AppViewModel) {
             }
         }
 
-        Row(
-            Modifier.fillMaxWidth().padding(top = 28.dp),
-            horizontalArrangement = Arrangement.spacedBy(28.dp, Alignment.CenterHorizontally),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            SkipButton(Glyph.REWIND, "15", "Back 15 seconds", { vm.player.seekBy(-15_000) })
-            PlayPauseButton(state.isPlaying, vm.player::toggle, size = 128)
-            SkipButton(Glyph.FORWARD, "30", "Forward 30 seconds", { vm.player.seekBy(30_000) })
-        }
-
-        Row(
-            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            TextLink("‹ Previous", enabled = true) { vm.player.previous() }
-            TextLink("Next ›", enabled = state.upcoming.isNotEmpty()) { vm.player.next() }
+        if (long) {
+            // Talks: seconds matter more than tracks.
+            Row(
+                Modifier.fillMaxWidth().padding(top = 28.dp),
+                horizontalArrangement = Arrangement.spacedBy(28.dp, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SkipButton(Glyph.REWIND, "15", "Back 15 seconds", { vm.player.seekBy(-15_000) })
+                PlayPauseButton(state.isPlaying, vm.player::toggle, size = 128)
+                SkipButton(Glyph.FORWARD, "30", "Forward 30 seconds", { vm.player.seekBy(30_000) })
+            }
+            Row(
+                Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                TextLink("‹ Previous", enabled = true) { vm.player.previous() }
+                TextLink("Next ›", enabled = state.upcoming.isNotEmpty()) { vm.player.next() }
+            }
+        } else {
+            // Music: same shapes, but the round buttons change tracks.
+            Row(
+                Modifier.fillMaxWidth().padding(top = 32.dp, bottom = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(28.dp, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SkipButton(Glyph.PREVIOUS, null, "Previous", { vm.player.previous() })
+                PlayPauseButton(state.isPlaying, vm.player::toggle, size = 128)
+                SkipButton(Glyph.NEXT, null, "Next", { vm.player.next() }, enabled = state.upcoming.isNotEmpty())
+            }
         }
 
         val videoId = state.videoId

@@ -130,10 +130,12 @@ private fun progressOf(resume: ResumePositions, track: Track): String? {
  * finished. Null when nothing in the list has been started.
  */
 private fun continueIndex(resume: ResumePositions, tracks: List<Track>): Int? {
-    val last = tracks.indices.maxByOrNull { resume.lastPlayed(tracks[it].videoId) } ?: return null
+    // Only series of long items (classes, episodes); albums and song playlists just play.
+    fun long(i: Int) = (tracks[i].durationSec ?: 0) >= LONG_ITEM_SEC
+    val last = tracks.indices.filter(::long).maxByOrNull { resume.lastPlayed(tracks[it].videoId) } ?: return null
     if (resume.lastPlayed(tracks[last].videoId) == 0L) return null
     if (!resume.isFinished(tracks[last].videoId)) return last
-    return (last + 1 until tracks.size).firstOrNull { !resume.isFinished(tracks[it].videoId) }
+    return (last + 1 until tracks.size).firstOrNull { long(it) && !resume.isFinished(tracks[it].videoId) }
 }
 
 private const val LONG_ITEM_SEC = 600
