@@ -78,6 +78,7 @@ class InnerTube(
             Page(Parser.tracks(root), Parser.continuation(root)),
             if (continuation == null) Parser.libraryState(root) else null,
             continuation == null && browseId != LIKED_SONGS && Parser.isEditable(root),
+            if (continuation == null) Parser.subscription(root) else null,
         )
     }
 
@@ -85,6 +86,14 @@ class InnerTube(
     fun setSaved(playlistId: String, saved: Boolean) {
         val target = buildJsonObject { put("playlistId", playlistId) }
         post(if (saved) "like/like" else "like/removelike", mapOf("target" to target), null)
+    }
+
+    fun setSubscribed(channelId: String, subscribed: Boolean) {
+        post(
+            if (subscribed) "subscription/subscribe" else "subscription/unsubscribe",
+            mapOf("channelIds" to buildJsonArray { add(channelId) }),
+            null,
+        )
     }
 
     /** Your playlists that this song can be added to. */

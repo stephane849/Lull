@@ -53,6 +53,13 @@ object Parser {
         return null
     }
 
+    /** The Subscribe button on an artist page. */
+    fun subscription(root: JsonElement): Subscription? =
+        findAll(root, "subscribeButtonRenderer").firstNotNullOfOrNull { r ->
+            val id = r["channelId"].str() ?: return@firstNotNullOfOrNull null
+            Subscription(id, (r["subscribed"] as? JsonPrimitive)?.content == "true")
+        }
+
     /** Your own playlists have an editable header (rename, edit) instead of a Save button. */
     fun isEditable(root: JsonElement): Boolean =
         findAll(root, "musicEditablePlaylistDetailHeaderRenderer").isNotEmpty()

@@ -19,6 +19,7 @@ import app.lull.core.MusicCollection
 import app.lull.core.Page
 import app.lull.core.PlaylistTarget
 import app.lull.core.SearchFilter
+import app.lull.core.Subscription
 import app.lull.core.Track
 import app.lull.data.Series
 import app.lull.download.Downloads
@@ -41,6 +42,7 @@ sealed interface Screen {
     data class TrackActions(val track: Track) : Screen
     data class AddToPlaylist(val track: Track) : Screen
     data class EditPlaylist(val collection: MusicCollection) : Screen
+    data class CollectionActions(val collection: MusicCollection) : Screen
 }
 
 /**
@@ -220,7 +222,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // --- library ------------------------------------------------------------------------
     private val shelves = HashMap<String, Paged<MusicCollection>>()
     fun shelf(browseId: String): Paged<MusicCollection> = shelves.getOrPut(browseId) {
-        Paged(viewModelScope) { cont -> repo.libraryCollections(browseId, cont) }
+        Paged(viewModelScope) { cont ->
+            val page = repo.libraryCollections(browseId, cont)
+            // Your Lull-saved items go on top of the first page if the server left them out.
+            if (cont == null) Page(AppGraph.savedLocally.merge(browseId, page.items), page.continuation)
+            else Page(page.items.filter { c -> AppGraph.savedLocally.all().none { it.browseId == c.browseId } }, page.continuation)
+        }
     }
 
     private val collections = HashMap<String, Paged<Track>>()
@@ -229,6 +236,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val page = repo.collectionPage(browseId, cont)
             page.library?.let { libraryStates[browseId] = it }
             if (cont == null && page.editable) editable.add(browseId)
+            page.subscription?.let { subscriptions[browseId] = it }
             page.tracks
         }.apply { setOrder(AppGraph.settings.isReversed(browseId)) }
     }
@@ -260,7 +268,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (paged.complete && editItems.isEmpty() && paged.items.isNotEmpty()) editItems.addAll(paged.items)
     }
 
-    val canEditItems: Boolean get() = editItems.isNotEmpty() && editItems.all { it.setVideoId != null }
+    /** Liked songs can't be reordered, only unliked. */
+    val editingLiked: Boolean get() = editingId == InnerTube.LIKED_SONGS
+
+    val canEditItems: Boolean get() = editItems.isNotEmpty() && (editingLiked || editItems.all { it.setVideoId != null })
 
     fun moveItem(from: Int, to: Int) {
         val id = editingId ?: return
@@ -278,7 +289,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (index !in editItems.indices) return
         val before = editItems.toList()
         val t = editItems.removeAt(index)
-        editRequest(before) { repo.removePlaylistItem(id, t.setVideoId!!, t.videoId) }
+        if (editingLiked) {
+            liked[t.videoId] = false
+            editRequest(before) { repo.setLiked(t.videoId, false) }
+        } else {
+            editRequest(before) { repo.removePlaylistItem(id, t.setVideoId!!, t.videoId) }
+        }
     }
 
     fun renameEditing(name: String) {
@@ -296,18 +312,26 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteEditing() {
         val id = editingId ?: return
+        deletePlaylist(id) { ok -> if (!ok) editError = "Couldn't delete the playlist." }
+    }
+
+    /** Deletes one of your playlists and leaves any screens showing it. */
+    fun deletePlaylist(browseId: String, done: (Boolean) -> Unit) {
         editBusy = true
         viewModelScope.launch {
-            runCatching { repo.deletePlaylist(id) }
-                .onSuccess {
-                    shelves.remove(InnerTube.LIBRARY_PLAYLISTS)
-                    collections.remove(id)
-                    // Leave both the edit screen and the playlist's page.
-                    stack.removeAll { it is Screen.EditPlaylist || (it is Screen.Collection && it.collection.browseId == id) }
-                    if (stack.isEmpty()) stack.add(Screen.Start)
+            val ok = runCatching { repo.deletePlaylist(browseId) }.isSuccess
+            if (ok) {
+                shelves.remove(InnerTube.LIBRARY_PLAYLISTS)
+                collections.remove(browseId)
+                editable.remove(browseId)
+                stack.removeAll {
+                    it is Screen.EditPlaylist || it is Screen.CollectionActions ||
+                        (it is Screen.Collection && it.collection.browseId == browseId)
                 }
-                .onFailure { editError = "Couldn't delete the playlist." }
+                if (stack.isEmpty()) stack.add(Screen.Start)
+            }
             editBusy = false
+            done(ok)
         }
     }
 
@@ -341,17 +365,39 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var libraryError by mutableStateOf<String?>(null)
         private set
 
-    fun toggleSaved(browseId: String) {
+    fun toggleSaved(collection: MusicCollection) {
+        val browseId = collection.browseId
         val state = libraryStates[browseId] ?: return
         val now = !state.saved
         libraryStates[browseId] = state.copy(saved = now)
         libraryError = null
         viewModelScope.launch {
             runCatching { repo.setSaved(state.playlistId, now) }
-                .onSuccess { LIBRARY_SHELVES.forEach { shelves.remove(it) } }
+                .onSuccess {
+                    AppGraph.savedLocally.set(collection, now)
+                    LIBRARY_SHELVES.forEach { shelves.remove(it) }
+                }
                 .onFailure {
                     libraryStates[browseId] = state
                     libraryError = "Couldn't update your library. Try again."
+                }
+        }
+    }
+
+    /** Artist pages: whether you're subscribed. */
+    val subscriptions = mutableStateMapOf<String, Subscription>()
+
+    fun toggleSubscribed(browseId: String) {
+        val sub = subscriptions[browseId] ?: return
+        val now = !sub.subscribed
+        subscriptions[browseId] = sub.copy(subscribed = now)
+        libraryError = null
+        viewModelScope.launch {
+            runCatching { repo.setSubscribed(sub.channelId, now) }
+                .onSuccess { shelves.remove(InnerTube.LIBRARY_ARTISTS) }
+                .onFailure {
+                    subscriptions[browseId] = sub
+                    libraryError = "Couldn't update your subscriptions. Try again."
                 }
         }
     }

@@ -42,6 +42,8 @@ class Repository(private val api: InnerTube) {
     suspend fun renamePlaylist(playlistId: String, name: String) = io { api.renamePlaylist(playlistId, name) }
     suspend fun deletePlaylist(playlistId: String) = io { api.deletePlaylist(playlistId) }
 
+    suspend fun setSubscribed(channelId: String, subscribed: Boolean) = io { api.setSubscribed(channelId, subscribed) }
+
     suspend fun radio(videoId: String): List<Track> = io { api.radio(videoId) }
 
     suspend fun setLiked(videoId: String, liked: Boolean) = io { api.setLiked(videoId, liked) }

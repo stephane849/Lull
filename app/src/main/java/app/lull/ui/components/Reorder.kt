@@ -123,17 +123,27 @@ fun ReorderBar(
     count: Int,
     onMove: (from: Int, to: Int) -> Unit,
     onRemove: (Int) -> Unit,
+    allowMove: Boolean = true,
+    removeLabel: String = "Remove",
 ) {
     HorizontalDividerMMD(thickness = 2.dp, color = Ink)
     val sel = state.selected
     if (sel == null || sel >= count) {
-        TextMMD("Tap an item to move or remove it.", fontSize = 16.sp, color = Muted,
+        TextMMD(if (allowMove) "Tap an item to move or remove it." else "Tap an item to ${removeLabel.lowercase()} it.", fontSize = 16.sp, color = Muted,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 20.dp))
         return
     }
     if (state.moving) {
         Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
             BarButton("Cancel", "×", filled = false, enabled = true, modifier = Modifier.fillMaxWidth()) { state.moving = false }
+        }
+        return
+    }
+    if (!allowMove) {
+        Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
+            BarButton(removeLabel, "×", filled = true, enabled = true, modifier = Modifier.fillMaxWidth()) {
+                onRemove(sel); state.clear()
+            }
         }
         return
     }

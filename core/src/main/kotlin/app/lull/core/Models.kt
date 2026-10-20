@@ -46,4 +46,12 @@ data class PlaylistTarget(val playlistId: String, val title: String)
  * One page of a collection's tracks. [library] and [editable] are read from the first page
  * only: [editable] is true for playlists you own.
  */
-data class CollectionPage(val tracks: Page<Track>, val library: LibraryState?, val editable: Boolean = false)
+data class CollectionPage(
+    val tracks: Page<Track>,
+    val library: LibraryState?,
+    val editable: Boolean = false,
+    val subscription: Subscription? = null,
+)
+
+/** An artist page's Subscribe button: the channel and whether you follow it. */
+data class Subscription(val channelId: String, val subscribed: Boolean)

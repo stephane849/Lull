@@ -129,4 +129,10 @@ class ParserTest {
         assertEquals("SET1", Parser.tracks(root).single().setVideoId)
         assertEquals(true, Parser.isEditable(root))
     }
+
+    @Test
+    fun readsSubscription() {
+        val json = """{"header":{"musicImmersiveHeaderRenderer":{"subscriptionButton":{"subscribeButtonRenderer":{"channelId":"UCabc","subscribed":true}}}}}"""
+        assertEquals(Subscription("UCabc", true), Parser.subscription(Json.parseToJsonElement(json)))
+    }
 }

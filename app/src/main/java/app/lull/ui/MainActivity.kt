@@ -24,6 +24,7 @@ import app.lull.ui.screens.SignInScreen
 import app.lull.ui.screens.TrackActionsScreen
 import app.lull.ui.screens.AddToPlaylistScreen
 import app.lull.ui.screens.EditPlaylistScreen
+import app.lull.ui.screens.CollectionActionsScreen
 import app.lull.ui.screens.StartScreen
 import com.mudita.mmd.ThemeMMD
 
@@ -66,5 +67,6 @@ private fun LullRoot(vm: AppViewModel) {
         is Screen.TrackActions -> TrackActionsScreen(vm, screen.track)
         is Screen.AddToPlaylist -> AddToPlaylistScreen(vm, screen.track)
         is Screen.EditPlaylist -> EditPlaylistScreen(vm, screen.collection)
+        is Screen.CollectionActions -> CollectionActionsScreen(vm, screen.collection)
     }
 }

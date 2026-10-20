@@ -68,9 +68,12 @@ fun EditPlaylistScreen(vm: AppViewModel, collection: MusicCollection) {
     var confirmDelete by remember { mutableStateOf(false) }
     val items = vm.editItems
 
-    val bar: @Composable () -> Unit = { ReorderBar(state, items.size, vm::moveItem, vm::removeItem) }
+    val liked = vm.editingLiked
+    val bar: @Composable () -> Unit = {
+        ReorderBar(state, items.size, vm::moveItem, vm::removeItem, allowMove = !liked, removeLabel = if (liked) "Unlike" else "Remove")
+    }
     ScreenFrame(
-        title = "Edit playlist",
+        title = if (liked) "Edit liked songs" else "Edit playlist",
         onBack = null,
         action = {
             Box(
@@ -101,8 +104,10 @@ fun EditPlaylistScreen(vm: AppViewModel, collection: MusicCollection) {
                         fontSize = 15.sp, color = Muted,
                     )
                 }
-                TextMMD("Rename", fontSize = 16.sp, fontWeight = FontWeight.Bold, textDecoration = TextDecoration.Underline,
-                    modifier = Modifier.heightIn(min = 44.dp).clickable(role = Role.Button) { name = vm.editTitle; renaming = true }.padding(12.dp))
+                if (!liked) {
+                    TextMMD("Rename", fontSize = 16.sp, fontWeight = FontWeight.Bold, textDecoration = TextDecoration.Underline,
+                        modifier = Modifier.heightIn(min = 44.dp).clickable(role = Role.Button) { name = vm.editTitle; renaming = true }.padding(12.dp))
+                }
             }
         }
         vm.editError?.let { TextMMD(it, fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp)) }
@@ -131,10 +136,85 @@ fun EditPlaylistScreen(vm: AppViewModel, collection: MusicCollection) {
             else -> ReorderList(state, items.map { it.rowText() }, vm::moveItem)
         }
 
-        TextMMD(
-            "Delete this playlist", fontSize = 16.sp, color = Muted, textDecoration = TextDecoration.Underline,
-            modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 12.dp).heightIn(min = 44.dp)
-                .clickable(role = Role.Button) { state.clear(); confirmDelete = true }.padding(12.dp),
-        )
+        if (!liked) {
+            TextMMD(
+                "Delete this playlist", fontSize = 16.sp, color = Muted, textDecoration = TextDecoration.Underline,
+                modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 12.dp).heightIn(min = 44.dp)
+                    .clickable(role = Role.Button) { state.clear(); confirmDelete = true }.padding(12.dp),
+            )
+        }
     }
+}
+
+/**
+ * Long-press (or ⋯) on a library item: open it, or take it out of your library. Loads the
+ * item's page first to learn what's possible: delete (your playlists), remove from library
+ * (saved playlists, albums, podcasts) or unsubscribe (artists).
+ */
+@Composable
+fun CollectionActionsScreen(vm: AppViewModel, collection: MusicCollection) {
+    val paged = vm.collectionTracks(collection.browseId)
+    LaunchedEffect(paged) { if (!paged.started) paged.start() }
+    var confirmDelete by remember { mutableStateOf(false) }
+    var done by remember { mutableStateOf<String?>(null) }
+    val library = vm.libraryStates[collection.browseId]
+    val sub = vm.subscriptions[collection.browseId]
+    val own = collection.browseId in vm.editable
+    val checking = !paged.started || (paged.loading && paged.items.isEmpty())
+
+    ScreenFrame(title = collection.kindLabel().ifEmpty { "Item" }, onBack = { vm.back() }) {
+        Column(Modifier.padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 16.dp)) {
+            TextMMD(collection.title, fontSize = 24.sp, fontWeight = FontWeight.Bold, lineHeight = 29.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            if (collection.subtitle.isNotBlank()) {
+                TextMMD(collection.subtitle.replace(" • ", " · "), fontSize = 16.sp, color = Muted, modifier = Modifier.padding(top = 6.dp))
+            }
+        }
+        (done ?: vm.libraryError)?.let { TextMMD(it, fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 12.dp)) }
+        HorizontalDividerMMD(thickness = 2.dp, color = Ink)
+
+        if (confirmDelete) {
+            Column(
+                Modifier.fillMaxWidth().padding(20.dp).border(2.5.dp, Ink, RoundedCornerShape(16.dp)).padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                TextMMD("Delete “${collection.title}”?", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                TextMMD("This removes it from YouTube Music everywhere. It can't be undone.", fontSize = 16.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    PrimaryButton(if (vm.editBusy) "Deleting…" else "Delete", null,
+                        { vm.deletePlaylist(collection.browseId) { ok -> if (!ok) { done = "Couldn't delete the playlist."; confirmDelete = false } } },
+                        Modifier.weight(1f))
+                    SecondaryButton("Keep it", null, { confirmDelete = false }, Modifier.weight(1f))
+                }
+            }
+            return@ScreenFrame
+        }
+
+        ActionLine("Open") { vm.back(); vm.go(app.lull.ui.Screen.Collection(collection)) }
+        when {
+            checking -> TextMMD("Checking what you can change…", fontSize = 17.sp, color = Muted, modifier = Modifier.padding(24.dp))
+            own -> {
+                ActionLine("Edit") { vm.back(); vm.go(app.lull.ui.Screen.EditPlaylist(collection)) }
+                ActionLine("Delete playlist") { confirmDelete = true }
+            }
+            library != null -> ActionLine(if (library.saved) "Remove from library" else "Save to library") {
+                done = if (library.saved) "Removed from your library." else "Saved to your library."
+                vm.toggleSaved(collection)
+            }
+            sub != null -> ActionLine(if (sub.subscribed) "Unsubscribe" else "Subscribe") {
+                done = if (sub.subscribed) "Unsubscribed." else "Subscribed."
+                vm.toggleSubscribed(collection.browseId)
+            }
+            else -> TextMMD("YouTube Music doesn't offer a way to remove this one.", fontSize = 17.sp, color = Muted, modifier = Modifier.padding(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun ActionLine(label: String, onClick: () -> Unit) {
+    TextMMD(
+        label, fontSize = 20.sp, fontWeight = FontWeight.Bold,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp).clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 18.dp),
+    )
+    HorizontalDividerMMD(thickness = 1.dp, color = Ink)
 }

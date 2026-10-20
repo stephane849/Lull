@@ -195,10 +195,10 @@ class PlaybackService : MediaLibraryService() {
             MediaIds.DOWNLOADS -> withContext(Dispatchers.IO) { Downloads.completed() }
                 .take(CAR_PAGE).let(::carList)
             MediaIds.PLAYLISTS -> listOf(folderItem(MediaIds.LIKED, "Liked songs", MediaMetadata.MEDIA_TYPE_PLAYLIST)) +
-                repo.libraryCollections(InnerTube.LIBRARY_PLAYLISTS).items
+                AppGraph.savedLocally.merge(InnerTube.LIBRARY_PLAYLISTS, repo.libraryCollections(InnerTube.LIBRARY_PLAYLISTS).items)
                     .filter { it.kind == CollectionKind.PLAYLIST && it.browseId != InnerTube.LIKED_SONGS }
                     .take(CAR_PAGE - 1).map { it.toFolderItem() }
-            MediaIds.PODCASTS -> repo.libraryCollections(InnerTube.LIBRARY_PODCASTS).items
+            MediaIds.PODCASTS -> AppGraph.savedLocally.merge(InnerTube.LIBRARY_PODCASTS, repo.libraryCollections(InnerTube.LIBRARY_PODCASTS).items)
                 .take(CAR_PAGE).map { it.toFolderItem() }
             MediaIds.LIKED -> repo.collectionTracks(InnerTube.LIKED_SONGS).items
                 .take(CAR_PAGE).let(::carList)

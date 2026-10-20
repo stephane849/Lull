@@ -119,7 +119,16 @@ fun LibraryShelfScreen(vm: AppViewModel, title: String, browseId: String) {
     ScreenFrame(title = title, onBack = { vm.back() }, bottom = miniPlayerBar(vm)) {
         PagedStatus(paged, empty = "Nothing here yet.")
         paged.pageItems.forEach { c: MusicCollection ->
-            ListRow(c.title, c.subtitle, { vm.go(Screen.Collection(c)) })
+            ListRow(
+                c.title, c.subtitle.replace(" • ", " · "), { vm.go(Screen.Collection(c)) },
+                onLongClick = { vm.go(Screen.CollectionActions(c)) },
+                trailing = {
+                    TextMMD("⋯", fontSize = 26.sp, modifier = Modifier.size(48.dp)
+                        .clickable(role = Role.Button) { vm.go(Screen.CollectionActions(c)) }
+                        .semantics { contentDescription = "Options for ${c.title}" }
+                        .padding(top = 6.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                },
+            )
         }
         if (paged.items.isNotEmpty()) Pager(paged)
     }
@@ -163,15 +172,19 @@ fun CollectionScreen(vm: AppViewModel, collection: MusicCollection) {
             if (meta.isNotEmpty()) TextMMD(meta, fontSize = 16.sp, color = Muted, modifier = Modifier.padding(top = 8.dp))
             val library = vm.libraryStates[collection.browseId]
             val showOrder = canReverse && tracks.size > 1
-            val canEdit = collection.browseId in vm.editable
-            if (library != null || showOrder || canEdit) {
+            val canEdit = collection.browseId in vm.editable || collection.browseId == InnerTube.LIKED_SONGS
+            val sub = vm.subscriptions[collection.browseId]
+            if (library != null || showOrder || canEdit || sub != null) {
                 Row(
                     Modifier.padding(top = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     if (library != null) {
-                        SavePill(library.saved) { vm.toggleSaved(collection.browseId) }
+                        SavePill(library.saved) { vm.toggleSaved(collection) }
+                    }
+                    if (sub != null) {
+                        SavePill(sub.subscribed, onLabel = "Subscribed", offLabel = "Subscribe") { vm.toggleSubscribed(collection.browseId) }
                     }
                     if (canEdit) {
                         Row(
@@ -282,19 +295,19 @@ private fun PlayButtons(
 
 /** "Save" / "In library": a pill, filled once saved, so the state reads at a glance on E Ink. */
 @Composable
-private fun SavePill(saved: Boolean, onClick: () -> Unit) {
+private fun SavePill(saved: Boolean, onLabel: String = "In library", offLabel: String = "Save", onClick: () -> Unit) {
     Row(
         Modifier.height(44.dp)
             .background(if (saved) Ink else Paper, RoundedCornerShape(22.dp))
             .border(2.dp, Ink, RoundedCornerShape(22.dp))
             .clickable(role = Role.Button, onClick = onClick)
-            .semantics { contentDescription = if (saved) "In your library. Tap to remove." else "Save to library" }
+            .semantics { contentDescription = if (saved) "$onLabel. Tap to undo." else offLabel }
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         LineIcon(if (saved) Glyph.CHECK else Glyph.PLUS, size = 18.dp, color = if (saved) Paper else Ink)
-        TextMMD(if (saved) "In library" else "Save", fontSize = 16.sp, fontWeight = FontWeight.Bold,
+        TextMMD(if (saved) onLabel else offLabel, fontSize = 16.sp, fontWeight = FontWeight.Bold,
             color = if (saved) Paper else Ink)
     }
 }
