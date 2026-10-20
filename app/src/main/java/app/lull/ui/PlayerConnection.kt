@@ -114,6 +114,13 @@ class PlayerConnection(context: Context, scope: CoroutineScope) {
 
     fun shuffle(tracks: List<Track>, from: String? = null) = play(tracks.shuffled(), 0, from)
 
+    /** Right after the current item. */
+    fun playNext(track: Track) {
+        val c = controller ?: return
+        if (c.mediaItemCount == 0) return addToQueue(track)
+        c.addMediaItem(c.currentMediaItemIndex + 1, track.toMediaItem())
+    }
+
     fun addToQueue(track: Track) {
         val c = controller ?: return
         c.addMediaItem(track.toMediaItem())

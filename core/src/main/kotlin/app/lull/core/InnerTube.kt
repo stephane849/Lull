@@ -4,6 +4,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
@@ -66,9 +68,56 @@ class InnerTube(
     }
 
     /** Songs or episodes inside a playlist, album, artist or podcast page, or [LIKED_SONGS]. */
-    fun collectionTracks(browseId: String, continuation: String? = null): Page<Track> {
+    fun collectionTracks(browseId: String, continuation: String? = null): Page<Track> =
+        collectionPage(browseId, continuation).tracks
+
+    /** Like [collectionTracks], plus the page's library state on the first page. */
+    fun collectionPage(browseId: String, continuation: String? = null): CollectionPage {
         val root = post("browse", browse(browseId), continuation)
-        return Page(Parser.tracks(root), Parser.continuation(root))
+        return CollectionPage(
+            Page(Parser.tracks(root), Parser.continuation(root)),
+            if (continuation == null) Parser.libraryState(root) else null,
+        )
+    }
+
+    /** Save an album, podcast or playlist to your library, or remove it. */
+    fun setSaved(playlistId: String, saved: Boolean) {
+        val target = buildJsonObject { put("playlistId", playlistId) }
+        post(if (saved) "like/like" else "like/removelike", mapOf("target" to target), null)
+    }
+
+    /** Your playlists that this song can be added to. */
+    fun playlistTargets(videoId: String): List<PlaylistTarget> {
+        val root = post("playlist/get_add_to_playlist", mapOf("videoIds" to buildJsonArray { add(videoId) }), null)
+        return Parser.playlistTargets(root)
+    }
+
+    fun addToPlaylist(playlistId: String, videoId: String) {
+        val action = buildJsonObject {
+            put("action", "ACTION_ADD_VIDEO")
+            put("addedVideoId", videoId)
+            put("dedupeOption", "DEDUPE_OPTION_SKIP")
+        }
+        post(
+            "browse/edit_playlist",
+            mapOf("playlistId" to JsonPrimitive(playlistId.removePrefix("VL")), "actions" to buildJsonArray { add(action) }),
+            null,
+        )
+    }
+
+    /** A new private playlist holding [videoIds]. Returns its id. */
+    fun createPlaylist(title: String, videoIds: List<String>): String? {
+        val root = post(
+            "playlist/create",
+            mapOf(
+                "title" to JsonPrimitive(title),
+                "description" to JsonPrimitive(""),
+                "privacyStatus" to JsonPrimitive("PRIVATE"),
+                "videoIds" to buildJsonArray { videoIds.forEach { add(it) } },
+            ),
+            null,
+        )
+        return Parser.createdPlaylistId(root)
     }
 
     /** A radio queue seeded from one song. Only used when the user asks for it. */

@@ -1,58 +1,207 @@
 package app.lull.ui.screens
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.lull.core.InnerTube
+import app.lull.core.Titles
+import app.lull.data.Series
 import app.lull.ui.AppViewModel
+import app.lull.ui.PlayerUi
 import app.lull.ui.Screen
-import app.lull.ui.components.BigNavButton
 import app.lull.ui.components.Glyph
+import app.lull.ui.components.Ink
 import app.lull.ui.components.MiniPlayer
 import app.lull.ui.components.Muted
+import app.lull.ui.components.PrimaryButton
 import app.lull.ui.components.ScreenFrame
+import app.lull.ui.components.SecondaryButton
+import app.lull.ui.components.formatDuration
+import app.lull.ui.continueIndex
+import app.lull.ui.progressOf
+import com.mudita.mmd.components.divider.HorizontalDividerMMD
 import com.mudita.mmd.components.text.TextMMD
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 
-/** Three doors and nothing else: no feed, no recommendations. */
+/**
+ * Home: "Pick up" for the series you're in the middle of, then a short index of places to
+ * go. No feed, no recommendations. With nothing in progress, it's just the index.
+ */
 @Composable
 fun StartScreen(vm: AppViewModel) {
     val player by vm.player.state.collectAsStateWithLifecycle()
+    val resumeVersion by vm.resume.version.collectAsStateWithLifecycle()
+    val series = vm.lastSeries
+    val resumeAt = remember(series, resumeVersion) { series?.let { continueIndex(vm.resume, it.tracks) } }
+    // The card is the player while it holds what's playing; no separate mini player then.
+    val cardIsPlaying = series != null && player.hasMedia &&
+        series.tracks.any { it.videoId == player.videoId }
+    val showCard = series != null && (resumeAt != null || cardIsPlaying)
+
+    val miniBar: @Composable () -> Unit = {
+        MiniPlayer(player, { vm.go(Screen.NowPlaying) }, vm.player::toggle, { vm.player.seekBy(-15_000) })
+    }
     ScreenFrame(
         title = null,
         onBack = null,
-        bottom = { MiniPlayer(player, { vm.go(Screen.NowPlaying) }, vm.player::toggle, { vm.player.seekBy(-15_000) }) },
+        bottom = if (cardIsPlaying) null else miniBar,
     ) {
-        Column(Modifier.padding(start = 24.dp, end = 24.dp, top = 48.dp, bottom = 24.dp)) {
-            TextMMD("Lull", fontSize = 52.sp, fontWeight = FontWeight.Bold)
-            TextMMD("Play something on purpose.", fontSize = 17.sp, color = Muted, modifier = Modifier.padding(top = 8.dp))
+        Row(
+            Modifier.fillMaxWidth().padding(start = 28.dp, end = 28.dp, top = 28.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            TextMMD("LULL", fontSize = 17.sp, fontWeight = FontWeight.Black, letterSpacing = 3.sp, modifier = Modifier.weight(1f))
+            TextMMD(remember { dayPart() }, fontSize = 15.sp, color = Muted)
         }
-        Column(Modifier.padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            if (!vm.signedIn) {
-                BigNavButton("Sign in", "Connect your YouTube Music account", Glyph.NOTE) { vm.go(Screen.SignIn) }
+        HorizontalDividerMMD(thickness = 3.dp, color = Ink, modifier = Modifier.padding(start = 28.dp, end = 28.dp, top = 12.dp))
+
+        if (showCard && series != null) {
+            PickUpCard(vm, series, resumeAt, player, cardIsPlaying)
+        }
+
+        val big = !showCard
+        Column(Modifier.padding(start = 28.dp, end = 28.dp, top = if (big) 8.dp else 10.dp)) {
+            var n = 0
+            fun num() = "%02d".format(++n)
+            if (!vm.signedIn) IndexRow(num(), "Sign in", "Your music", big) { vm.go(Screen.SignIn) }
+            if (vm.signedIn) IndexRow(num(), "Podcasts", null, big) { vm.go(Screen.LibraryShelf("Podcasts", InnerTube.LIBRARY_PODCASTS)) }
+            IndexRow(num(), "Search", null, big) { vm.go(Screen.Search) }
+            if (vm.signedIn) {
+                IndexRow(num(), "Playlists", null, big) { vm.go(Screen.LibraryShelf("Playlists", InnerTube.LIBRARY_PLAYLISTS)) }
+                IndexRow(num(), "Liked", null, big) { vm.go(Screen.Collection(vm.likedSongs())) }
             }
-            BigNavButton("Search", "Songs, albums, artists", Glyph.SEARCH) { vm.go(Screen.Search) }
-            BigNavButton("Library", "Downloads, playlists, liked songs", Glyph.LIBRARY) { vm.go(Screen.Library) }
-            BigNavButton(
-                "Now playing",
-                if (player.hasMedia) "${player.title} · ${player.artist}" else "Nothing playing",
-                Glyph.NOTE,
-            ) { vm.go(Screen.NowPlaying) }
+            val offline = vm.downloadedTracks.size
+            IndexRow(num(), "Offline", if (offline > 0) "$offline ${if (offline == 1) "item" else "items"}" else null, big) {
+                vm.go(Screen.Downloads)
+            }
         }
-        TextMMD(
-            "Settings",
-            fontSize = 18.sp,
-            modifier = Modifier
-                .padding(horizontal = 24.dp, vertical = 20.dp)
-                .heightIn(min = 44.dp)
-                .clickable { vm.go(Screen.Settings) },
-        )
+
+        Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 8.dp)) {
+            if (vm.signedIn) {
+                SmallLink("Albums") { vm.go(Screen.LibraryShelf("Albums", InnerTube.LIBRARY_ALBUMS)) }
+                SmallLink("Artists") { vm.go(Screen.LibraryShelf("Artists", InnerTube.LIBRARY_ARTISTS)) }
+            }
+            SmallLink("Settings") { vm.go(Screen.Settings) }
+        }
     }
+}
+
+@Composable
+private fun PickUpCard(vm: AppViewModel, series: Series, resumeAt: Int?, player: PlayerUi, isCurrent: Boolean) {
+    val tracks = series.tracks
+    val shortTitles = remember(tracks) { Titles.distinct(tracks.map { it.title }) }
+    // While it plays, describe what's playing; otherwise, what's next to pick up.
+    val index = if (isCurrent) tracks.indexOfFirst { it.videoId == player.videoId } else resumeAt ?: 0
+    val track = tracks[index]
+    val resumeVersion by vm.resume.version.collectAsStateWithLifecycle()
+    val left = if (isCurrent && player.durationMs > 0) {
+        app.lull.ui.components.formatLeft((player.durationMs - player.positionMs).coerceAtLeast(0))
+    } else {
+        remember(track.videoId, resumeVersion) { progressOf(vm.resume, track) }
+            ?: track.durationSec?.let(::formatDuration)
+    }
+
+    Column(
+        Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 18.dp)
+            .border(2.5.dp, Ink, RoundedCornerShape(16.dp))
+            .padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 16.dp),
+    ) {
+        TextMMD(if (isCurrent) "NOW PLAYING" else "PICK UP", fontSize = 14.sp, fontWeight = FontWeight.Bold,
+            letterSpacing = 1.sp, color = Muted)
+        TextMMD(series.collection.title, fontSize = 24.sp, fontWeight = FontWeight.Bold, lineHeight = 29.sp,
+            maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+        val label = shortTitles.getOrElse(index) { track.title }
+        val line = listOfNotNull(
+            if (label.length <= 28) label else "${index + 1} of ${tracks.size}",
+            if (label.length <= 28 && tracks.size > 1) "${index + 1} of ${tracks.size}" else null,
+            left,
+        ).joinToString(" · ")
+        TextMMD(line, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+
+        if (tracks.size in 2..24) {
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                tracks.forEachIndexed { i, t ->
+                    val fill = when {
+                        vm.resume.isFinished(t.videoId) -> 1f
+                        i == index && isCurrent && player.durationMs > 0 -> player.positionMs.toFloat() / player.durationMs
+                        else -> {
+                            val dur = (t.durationSec ?: 0) * 1000f
+                            if (dur > 0) vm.resume.get(t.videoId) / dur else 0f
+                        }
+                    }.coerceIn(0f, 1f)
+                    Segment(fill, Modifier.weight(1f).height(8.dp), RoundedCornerShape(2.dp))
+                }
+            }
+        }
+
+        Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (isCurrent) {
+                PrimaryButton(if (player.isPlaying) "Pause" else "Resume", if (player.isPlaying) Glyph.PAUSE else Glyph.PLAY,
+                    vm.player::toggle, Modifier.weight(1f))
+            } else {
+                PrimaryButton("Continue", Glyph.PLAY, { vm.playFrom(series.collection, tracks, index) }, Modifier.weight(1f))
+            }
+            SecondaryButton("All parts", null, { vm.go(Screen.Collection(series.collection)) })
+        }
+    }
+}
+
+@Composable
+private fun IndexRow(number: String, label: String, note: String?, big: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth()
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(vertical = if (big) 12.dp else 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TextMMD(number, fontSize = 15.sp, color = Muted, modifier = Modifier.width(36.dp))
+        TextMMD(label, fontSize = if (big) 40.sp else 34.sp, fontWeight = FontWeight.Black, letterSpacing = (-1).sp,
+            lineHeight = if (big) 44.sp else 38.sp, maxLines = 1, modifier = Modifier.weight(1f))
+        if (note != null) TextMMD(note, fontSize = 15.sp, color = Muted)
+    }
+    HorizontalDividerMMD(thickness = 1.dp, color = Ink)
+}
+
+@Composable
+private fun SmallLink(label: String, onClick: () -> Unit) {
+    TextMMD(
+        label, fontSize = 17.sp, color = Muted,
+        modifier = Modifier.heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 13.dp),
+    )
+}
+
+/** "Tuesday evening". */
+private fun dayPart(): String {
+    val now = Calendar.getInstance()
+    val day = SimpleDateFormat("EEEE", Locale.getDefault()).format(now.time)
+    val part = when (now.get(Calendar.HOUR_OF_DAY)) {
+        in 5..11 -> "morning"
+        in 12..16 -> "afternoon"
+        in 17..21 -> "evening"
+        else -> "night"
+    }
+    return "$day $part"
 }

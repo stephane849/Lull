@@ -14,10 +14,13 @@ import app.lull.AppGraph
 import app.lull.core.CollectionKind
 import app.lull.core.InnerTube
 import app.lull.core.InnerTubeException
+import app.lull.core.LibraryState
 import app.lull.core.MusicCollection
 import app.lull.core.Page
+import app.lull.core.PlaylistTarget
 import app.lull.core.SearchFilter
 import app.lull.core.Track
+import app.lull.data.Series
 import app.lull.download.Downloads
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +38,8 @@ sealed interface Screen {
     data object Queue : Screen
     data object Settings : Screen
     data object SignIn : Screen
+    data class TrackActions(val track: Track) : Screen
+    data class AddToPlaylist(val track: Track) : Screen
 }
 
 /**
@@ -152,6 +157,8 @@ class Paged<T>(
     }
 }
 
+private val LIBRARY_SHELVES = listOf(InnerTube.LIBRARY_ALBUMS, InnerTube.LIBRARY_PODCASTS, InnerTube.LIBRARY_PLAYLISTS)
+
 class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = AppGraph.repo
@@ -203,8 +210,90 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val collections = HashMap<String, Paged<Track>>()
     fun collectionTracks(browseId: String): Paged<Track> = collections.getOrPut(browseId) {
-        Paged<Track>(viewModelScope) { cont -> repo.collectionTracks(browseId, cont) }
-            .apply { setOrder(AppGraph.settings.isReversed(browseId)) }
+        Paged<Track>(viewModelScope) { cont ->
+            val page = repo.collectionPage(browseId, cont)
+            page.library?.let { libraryStates[browseId] = it }
+            page.tracks
+        }.apply { setOrder(AppGraph.settings.isReversed(browseId)) }
+    }
+
+    // --- saving to library ----------------------------------------------------------------
+    /** Save state per collection browse id, read from its page. Absent: no Save button. */
+    val libraryStates = mutableStateMapOf<String, LibraryState>()
+    var libraryError by mutableStateOf<String?>(null)
+        private set
+
+    fun toggleSaved(browseId: String) {
+        val state = libraryStates[browseId] ?: return
+        val now = !state.saved
+        libraryStates[browseId] = state.copy(saved = now)
+        libraryError = null
+        viewModelScope.launch {
+            runCatching { repo.setSaved(state.playlistId, now) }
+                .onSuccess { LIBRARY_SHELVES.forEach { shelves.remove(it) } }
+                .onFailure {
+                    libraryStates[browseId] = state
+                    libraryError = "Couldn't update your library. Try again."
+                }
+        }
+    }
+
+    // --- add to playlist ------------------------------------------------------------------
+    var playlistTargets by mutableStateOf<List<PlaylistTarget>?>(null)
+        private set
+    var playlistStatus by mutableStateOf<String?>(null)
+        private set
+    var playlistBusy by mutableStateOf(false)
+        private set
+
+    fun loadPlaylistTargets(videoId: String) {
+        playlistTargets = null
+        playlistStatus = null
+        viewModelScope.launch {
+            runCatching { repo.playlistTargets(videoId) }
+                .onSuccess { playlistTargets = it }
+                .onFailure { playlistTargets = emptyList(); playlistStatus = "Couldn't load your playlists." }
+        }
+    }
+
+    fun addToPlaylist(target: PlaylistTarget, track: Track) {
+        if (playlistBusy) return
+        playlistBusy = true
+        playlistStatus = null
+        viewModelScope.launch {
+            playlistStatus = runCatching { repo.addToPlaylist(target.playlistId, track.videoId) }
+                .fold({ "Added to ${target.title}." }, { "Couldn't add to ${target.title}." })
+            playlistBusy = false
+            shelves.remove(InnerTube.LIBRARY_PLAYLISTS)
+            collections.remove("VL" + target.playlistId.removePrefix("VL"))
+        }
+    }
+
+    fun createPlaylist(title: String, track: Track) {
+        val name = title.trim()
+        if (name.isEmpty() || playlistBusy) return
+        playlistBusy = true
+        playlistStatus = null
+        viewModelScope.launch {
+            playlistStatus = runCatching { repo.createPlaylist(name, listOf(track.videoId)) }
+                .fold({ if (it != null) "Made “$name” with this song." else "Couldn't make the playlist." },
+                    { "Couldn't make the playlist." })
+            playlistBusy = false
+            shelves.remove(InnerTube.LIBRARY_PLAYLISTS)
+        }
+    }
+
+    // --- recent series (home screen) ------------------------------------------------------
+    var lastSeries by mutableStateOf<Series?>(AppGraph.recentSeries.last())
+        private set
+
+    /** Plays from a collection page; lists of long items are remembered for "Pick up". */
+    fun playFrom(collection: MusicCollection, tracks: List<Track>, index: Int, shuffle: Boolean = false) {
+        if (tracks.any { (it.durationSec ?: 0) >= LONG_ITEM_SEC }) {
+            AppGraph.recentSeries.save(collection, tracks)
+            lastSeries = Series(collection, tracks.take(300))
+        }
+        if (shuffle) player.shuffle(tracks, collection.title) else player.play(tracks, index, collection.title)
     }
 
     /** Oldest-first for podcasts and playlists, remembered per list. */

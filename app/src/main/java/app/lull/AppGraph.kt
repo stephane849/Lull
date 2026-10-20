@@ -15,6 +15,7 @@ import app.lull.core.Credentials
 import app.lull.core.InnerTube
 import app.lull.data.CredentialsStore
 import app.lull.data.Repository
+import app.lull.data.RecentSeries
 import app.lull.data.ResumePositions
 import app.lull.data.Settings
 import app.lull.playback.NewPipeDownloader
@@ -32,6 +33,7 @@ object AppGraph {
     lateinit var credentials: CredentialsStore private set
     lateinit var settings: Settings private set
     lateinit var resume: ResumePositions private set
+    lateinit var recentSeries: RecentSeries private set
     lateinit var repo: Repository private set
     lateinit var resolver: StreamResolver private set
     lateinit var downloadCache: SimpleCache private set
@@ -50,6 +52,7 @@ object AppGraph {
         credentials = CredentialsStore(context)
         settings = Settings(context)
         resume = ResumePositions(context)
+        recentSeries = RecentSeries(context)
         repo = Repository(InnerTube(http) { credentials.cookie()?.let(::Credentials) })
         resolver = StreamResolver(context, settings)
 

@@ -144,7 +144,7 @@ fun NowPlayingScreen(vm: AppViewModel) {
 
         val videoId = state.videoId
         Row(
-            Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 16.dp),
+            Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             OptionButton(formatSpeed(state.speed), "Playback speed", Modifier.weight(1f)) { vm.player.cycleSpeed() }
@@ -165,6 +165,13 @@ fun NowPlayingScreen(vm: AppViewModel) {
             val isLiked = videoId != null && vm.liked[videoId] == true
             OptionButton(if (isLiked) "Liked" else "Like", "Like", Modifier.weight(1f), bold = isLiked) {
                 videoId?.let(vm::toggleLike)
+            }
+        }
+        if (videoId != null) {
+            val current = app.lull.core.Track(videoId, state.title, state.artist, (state.durationMs / 1000).toInt().takeIf { it > 0 })
+            Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.Center) {
+                if (vm.signedIn) TextLink("+ Add to playlist", enabled = true) { vm.go(Screen.AddToPlaylist(current)) }
+                TextLink("More…", enabled = true) { vm.go(Screen.TrackActions(current)) }
             }
         }
     }
@@ -198,7 +205,7 @@ private fun ProgressStrip(state: PlayerUi) {
 }
 
 @Composable
-private fun Segment(fill: Float, modifier: Modifier, shape: Shape) {
+internal fun Segment(fill: Float, modifier: Modifier, shape: Shape) {
     Box(modifier.clip(shape).border(2.dp, Ink, shape)) {
         if (fill > 0f) Box(Modifier.fillMaxHeight().fillMaxWidth(fill).background(Ink))
     }

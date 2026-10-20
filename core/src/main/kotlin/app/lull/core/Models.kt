@@ -33,3 +33,12 @@ enum class SearchFilter(val params: String) {
     PODCASTS("EgWKAQJQAWoMEA4QChADEAQQCRAF"),
     EPISODES("EgWKAQJIAWoMEA4QChADEAQQCRAF"),
 }
+
+/** Whether a playlist, album or podcast is in your library, and the id used to change that. */
+data class LibraryState(val playlistId: String, val saved: Boolean)
+
+/** A playlist you can add songs to. */
+data class PlaylistTarget(val playlistId: String, val title: String)
+
+/** One page of a collection's tracks; [library] is read from the first page only. */
+data class CollectionPage(val tracks: Page<Track>, val library: LibraryState?)

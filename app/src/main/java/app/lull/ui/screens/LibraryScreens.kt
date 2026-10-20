@@ -1,5 +1,14 @@
 package app.lull.ui.screens
 
+import app.lull.ui.components.Paper
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.border
+import androidx.compose.foundation.background
+import app.lull.ui.continueIndex
+import app.lull.ui.progressOf
 import app.lull.ui.components.formatLeft
 import app.lull.data.ResumePositions
 import androidx.compose.ui.text.style.TextDecoration
@@ -94,7 +103,7 @@ fun DownloadsScreen(vm: AppViewModel) {
                 title = track.title,
                 subtitle = track.artist.takeUnless(Titles::isCount),
                 onClick = { vm.player.play(tracks, paged.page * paged.pageSize + i, "Downloads") },
-                onLongClick = { vm.player.addToQueue(track) },
+                onLongClick = { vm.go(Screen.TrackActions(track)) },
                 trailing = { IconTarget(Glyph.CLOSE, "Remove download of ${track.title}", { vm.removeDownload(track.videoId) }) },
             )
         }
@@ -115,30 +124,6 @@ fun LibraryShelfScreen(vm: AppViewModel, title: String, browseId: String) {
         if (paged.items.isNotEmpty()) Pager(paged)
     }
 }
-
-/** Progress shown on a row: only for long items (classes, episodes), never for songs. */
-private fun progressOf(resume: ResumePositions, track: Track): String? {
-    val dur = track.durationSec ?: return null
-    if (dur < LONG_ITEM_SEC) return null
-    if (resume.isFinished(track.videoId)) return "Played"
-    val pos = resume.get(track.videoId)
-    return if (pos > 0) formatLeft(dur * 1000L - pos) else null
-}
-
-/**
- * Where to pick up: the item played most recently, or the one after it if that was
- * finished. Null when nothing in the list has been started.
- */
-private fun continueIndex(resume: ResumePositions, tracks: List<Track>): Int? {
-    // Only series of long items (classes, episodes); albums and song playlists just play.
-    fun long(i: Int) = (tracks[i].durationSec ?: 0) >= LONG_ITEM_SEC
-    val last = tracks.indices.filter(::long).maxByOrNull { resume.lastPlayed(tracks[it].videoId) } ?: return null
-    if (resume.lastPlayed(tracks[last].videoId) == 0L) return null
-    if (!resume.isFinished(tracks[last].videoId)) return last
-    return (last + 1 until tracks.size).firstOrNull { long(it) && !resume.isFinished(tracks[it].videoId) }
-}
-
-private const val LONG_ITEM_SEC = 600
 
 @Composable
 fun CollectionScreen(vm: AppViewModel, collection: MusicCollection) {
@@ -176,28 +161,43 @@ fun CollectionScreen(vm: AppViewModel, collection: MusicCollection) {
                 if (allDownloaded) "Downloaded" else null,
             ).joinToString(" · ")
             if (meta.isNotEmpty()) TextMMD(meta, fontSize = 16.sp, color = Muted, modifier = Modifier.padding(top = 8.dp))
-            if (canReverse && tracks.size > 1) {
-                val label = when {
-                    isPodcast && paged.reversed -> "Oldest first"
-                    isPodcast -> "Newest first"
-                    paged.reversed -> "Reversed"
-                    else -> "Playlist order"
-                }
+            val library = vm.libraryStates[collection.browseId]
+            val showOrder = canReverse && tracks.size > 1
+            if (library != null || showOrder) {
                 Row(
-                    Modifier.padding(top = 4.dp).heightIn(min = 44.dp)
-                        .clickable(role = Role.Button) { vm.setReversed(collection.browseId, !paged.reversed) },
+                    Modifier.padding(top = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    TextMMD("Order: ", fontSize = 16.sp, color = Muted)
-                    TextMMD(label, fontSize = 16.sp, fontWeight = FontWeight.Bold, textDecoration = TextDecoration.Underline)
+                    if (library != null) {
+                        SavePill(library.saved) { vm.toggleSaved(collection.browseId) }
+                    }
+                    if (showOrder) {
+                        val label = when {
+                            isPodcast && paged.reversed -> "Oldest first"
+                            isPodcast -> "Newest first"
+                            paged.reversed -> "Reversed"
+                            else -> "Playlist order"
+                        }
+                        Row(
+                            Modifier.heightIn(min = 44.dp)
+                                .clickable(role = Role.Button) { vm.setReversed(collection.browseId, !paged.reversed) },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            TextMMD(label, fontSize = 16.sp, fontWeight = FontWeight.Bold, textDecoration = TextDecoration.Underline)
+                            TextMMD(" ⇅", fontSize = 16.sp)
+                        }
+                    }
                 }
             }
+            vm.libraryError?.let { TextMMD(it, fontSize = 15.sp, color = Muted, modifier = Modifier.padding(top = 4.dp)) }
         }
         if (!settling) {
             PlayButtons(
                 vm, tracks, collection.title, showDownload = true,
                 resumeAt = resumeAt,
                 resumeLabel = resumeAt?.let { shortTitles.getOrElse(it) { tracks[it].title } },
+                play = { index, shuffle -> vm.playFrom(collection, tracks, index, shuffle) },
             )
         }
         HorizontalDividerMMD(thickness = 2.dp, color = Ink)
@@ -213,8 +213,8 @@ fun CollectionScreen(vm: AppViewModel, collection: MusicCollection) {
                 track = track,
                 downloaded = track.videoId in vm.downloaded,
                 downloading = track.videoId in vm.downloading,
-                onPlay = { vm.player.play(tracks, index, collection.title) },
-                onQueue = { vm.player.addToQueue(track) },
+                onPlay = { vm.playFrom(collection, tracks, index) },
+                onQueue = { vm.go(Screen.TrackActions(track)) },
                 onDownload = { vm.download(track) },
                 number = index + 1,
                 displayTitle = shortTitles.getOrElse(index) { track.title },
@@ -238,6 +238,9 @@ private fun PlayButtons(
     showDownload: Boolean,
     resumeAt: Int? = null,
     resumeLabel: String? = null,
+    play: (index: Int, shuffle: Boolean) -> Unit = { index, shuffle ->
+        if (shuffle) vm.player.shuffle(tracks, source) else vm.player.play(tracks, index, source)
+    },
 ) {
     if (tracks.isEmpty()) return
     Column(
@@ -246,15 +249,15 @@ private fun PlayButtons(
     ) {
         if (resumeAt != null) {
             PrimaryButton("Continue: ${resumeLabel ?: "where you left off"}", Glyph.PLAY,
-                { vm.player.play(tracks, resumeAt, source) }, Modifier.fillMaxWidth())
+                { play(resumeAt, false) }, Modifier.fillMaxWidth())
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             if (resumeAt != null) {
-                SecondaryButton("From start", Glyph.PLAY, { vm.player.play(tracks, 0, source) }, Modifier.weight(1f))
+                SecondaryButton("From start", Glyph.PLAY, { play(0, false) }, Modifier.weight(1f))
             } else {
-                PrimaryButton("Play", Glyph.PLAY, { vm.player.play(tracks, 0, source) }, Modifier.weight(1f))
+                PrimaryButton("Play", Glyph.PLAY, { play(0, false) }, Modifier.weight(1f))
             }
-            SecondaryButton("Shuffle", Glyph.SHUFFLE, { vm.player.shuffle(tracks, source) }, Modifier.weight(1f))
+            SecondaryButton("Shuffle", Glyph.SHUFFLE, { play(0, true) }, Modifier.weight(1f))
             if (showDownload) {
                 val allDone = tracks.all { it.videoId in vm.downloaded }
                 SquareIconButton(
@@ -265,5 +268,24 @@ private fun PlayButtons(
                 )
             }
         }
+    }
+}
+
+/** "Save" / "In library": a pill, filled once saved, so the state reads at a glance on E Ink. */
+@Composable
+private fun SavePill(saved: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.height(44.dp)
+            .background(if (saved) Ink else Paper, RoundedCornerShape(22.dp))
+            .border(2.dp, Ink, RoundedCornerShape(22.dp))
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = if (saved) "In your library. Tap to remove." else "Save to library" }
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        LineIcon(if (saved) Glyph.CHECK else Glyph.PLUS, size = 18.dp, color = if (saved) Paper else Ink)
+        TextMMD(if (saved) "In library" else "Save", fontSize = 16.sp, fontWeight = FontWeight.Bold,
+            color = if (saved) Paper else Ink)
     }
 }

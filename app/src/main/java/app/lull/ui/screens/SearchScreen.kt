@@ -74,7 +74,7 @@ fun SearchScreen(vm: AppViewModel) {
                     downloaded = item.videoId in vm.downloaded,
                     downloading = item.videoId in vm.downloading,
                     onPlay = { vm.player.play(listOf(item), from = "Search") },
-                    onQueue = { vm.player.addToQueue(item) },
+                    onQueue = { vm.go(Screen.TrackActions(item)) },
                     onDownload = { vm.download(item) },
                 )
                 is MusicCollection -> ListRow(

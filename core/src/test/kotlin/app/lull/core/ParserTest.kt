@@ -86,4 +86,31 @@ class ParserTest {
         assertEquals(true, header.startsWith("SAPISIDHASH 1000_"))
         assertEquals("SAPISIDHASH 1000_".length + 40, header.length)
     }
+
+    @Test
+    fun readsLibraryToggle() {
+        val json = """
+        {"header":{"musicResponsiveHeaderRenderer":{"buttons":[
+          {"toggleButtonRenderer":{"isToggled":true,
+            "defaultServiceEndpoint":{"likeEndpoint":{"status":"LIKE","target":{"playlistId":"OLAK5uy_abc"}}},
+            "toggledServiceEndpoint":{"likeEndpoint":{"status":"INDIFFERENT","target":{"playlistId":"OLAK5uy_abc"}}}}}
+        ]}}}
+        """.trimIndent()
+        assertEquals(LibraryState("OLAK5uy_abc", true), Parser.libraryState(Json.parseToJsonElement(json)))
+        assertNull(Parser.libraryState(Json.parseToJsonElement("""{"header":{}}""")))
+    }
+
+    @Test
+    fun readsPlaylistTargets() {
+        val json = """
+        {"contents":[{"addToPlaylistRenderer":{"playlists":[
+          {"playlistAddToOptionRenderer":{"playlistId":"PL1","title":{"runs":[{"text":"Shama'il"}]}}},
+          {"playlistAddToOptionRenderer":{"playlistId":"PL2","title":{"simpleText":"Drive"}}}
+        ]}}]}
+        """.trimIndent()
+        assertEquals(
+            listOf(PlaylistTarget("PL1", "Shama'il"), PlaylistTarget("PL2", "Drive")),
+            Parser.playlistTargets(Json.parseToJsonElement(json)),
+        )
+    }
 }

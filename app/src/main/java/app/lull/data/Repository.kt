@@ -1,8 +1,10 @@
 package app.lull.data
 
+import app.lull.core.CollectionPage
 import app.lull.core.InnerTube
 import app.lull.core.MusicCollection
 import app.lull.core.Page
+import app.lull.core.PlaylistTarget
 import app.lull.core.SearchFilter
 import app.lull.core.Track
 import kotlinx.coroutines.Dispatchers
@@ -24,6 +26,14 @@ class Repository(private val api: InnerTube) {
 
     suspend fun collectionTracks(browseId: String, continuation: String? = null): Page<Track> =
         io { api.collectionTracks(browseId, continuation) }
+
+    suspend fun collectionPage(browseId: String, continuation: String? = null): CollectionPage =
+        io { api.collectionPage(browseId, continuation) }
+
+    suspend fun setSaved(playlistId: String, saved: Boolean) = io { api.setSaved(playlistId, saved) }
+    suspend fun playlistTargets(videoId: String): List<PlaylistTarget> = io { api.playlistTargets(videoId) }
+    suspend fun addToPlaylist(playlistId: String, videoId: String) = io { api.addToPlaylist(playlistId, videoId) }
+    suspend fun createPlaylist(title: String, videoIds: List<String>): String? = io { api.createPlaylist(title, videoIds) }
 
     suspend fun radio(videoId: String): List<Track> = io { api.radio(videoId) }
 

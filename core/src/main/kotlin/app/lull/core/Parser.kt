@@ -39,6 +39,30 @@ object Parser {
             Track(id, title, artist, parseDuration(runsText(r["lengthText"])))
         }.distinctBy { it.videoId }
 
+    /**
+     * The "Save to library" toggle on an album, podcast or someone else's playlist page.
+     * Null for your own playlists, which have no such button.
+     */
+    fun libraryState(root: JsonElement): LibraryState? {
+        for (toggle in findAll(root, "toggleButtonRenderer")) {
+            val id = findAll(toggle, "likeEndpoint").firstNotNullOfOrNull { path(it, "target", "playlistId").str() }
+                ?: continue
+            val saved = (toggle["isToggled"] as? JsonPrimitive)?.content == "true"
+            return LibraryState(id, saved)
+        }
+        return null
+    }
+
+    /** Playlists offered by "Add to playlist": only ones you can edit. */
+    fun playlistTargets(root: JsonElement): List<PlaylistTarget> =
+        findAll(root, "playlistAddToOptionRenderer").mapNotNull { r ->
+            val id = r["playlistId"].str() ?: return@mapNotNull null
+            val title = runsText(r["title"]).trim().ifEmpty { return@mapNotNull null }
+            PlaylistTarget(id, title)
+        }.distinctBy { it.playlistId }
+
+    fun createdPlaylistId(root: JsonElement): String? = root.field("playlistId").str()
+
     fun continuation(root: JsonElement): String? =
         findAll(root, "nextContinuationData").firstNotNullOfOrNull { it["continuation"].str() }
             ?: findAll(root, "continuationCommand").firstNotNullOfOrNull { it["token"].str() }
