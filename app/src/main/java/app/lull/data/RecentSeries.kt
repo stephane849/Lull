@@ -43,7 +43,30 @@ class RecentSeries(context: Context) {
         prefs.edit().putString(KEY, o.toString()).apply()
     }
 
+    /** Collections you played from, newest first (any kind), for the car's Pick up tab. */
+    fun recentCollections(): List<MusicCollection> = runCatching {
+        val arr = JSONArray(prefs.getString(RECENTS, "[]"))
+        (0 until arr.length()).map { i ->
+            val o = arr.getJSONObject(i)
+            MusicCollection(
+                o.getString("id"), o.getString("title"), o.optString("subtitle"),
+                runCatching { CollectionKind.valueOf(o.getString("kind")) }.getOrDefault(CollectionKind.OTHER),
+            )
+        }
+    }.getOrDefault(emptyList())
+
+    fun touch(collection: MusicCollection) {
+        val list = listOf(collection) + recentCollections().filter { it.browseId != collection.browseId }
+        val arr = JSONArray()
+        list.take(MAX_RECENTS).forEach { c ->
+            arr.put(JSONObject().put("id", c.browseId).put("title", c.title).put("subtitle", c.subtitle).put("kind", c.kind.name))
+        }
+        prefs.edit().putString(RECENTS, arr.toString()).apply()
+    }
+
     private companion object {
+        const val RECENTS = "recents"
+        const val MAX_RECENTS = 5
         const val KEY = "last"
         const val MAX_TRACKS = 300
     }

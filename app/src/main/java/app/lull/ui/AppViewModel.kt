@@ -289,6 +289,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Plays from a collection page; lists of long items are remembered for "Pick up". */
     fun playFrom(collection: MusicCollection, tracks: List<Track>, index: Int, shuffle: Boolean = false) {
+        if (collection.browseId != InnerTube.LIKED_SONGS) AppGraph.recentSeries.touch(collection)
         if (tracks.any { (it.durationSec ?: 0) >= LONG_ITEM_SEC }) {
             AppGraph.recentSeries.save(collection, tracks)
             lastSeries = Series(collection, tracks.take(300))

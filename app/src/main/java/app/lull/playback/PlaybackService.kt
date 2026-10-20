@@ -22,6 +22,12 @@ import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionError
 import androidx.media3.session.SessionResult
 import app.lull.AppGraph
+import app.lull.ui.components.formatDuration
+import app.lull.ui.progressOf
+import app.lull.ui.continueIndex
+import app.lull.core.Track
+import app.lull.core.Titles
+import androidx.media3.session.CommandButton
 import app.lull.core.CollectionKind
 import app.lull.core.InnerTube
 import app.lull.data.ResumePositions
@@ -85,6 +91,7 @@ class PlaybackService : MediaLibraryService() {
         resume = AppGraph.resume
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_READY) updateCarButtons()
                 if (playbackState == Player.STATE_ENDED) {
                     currentVideoId?.let(resume::finish)
                     // Mindful default: the queue simply ends. Radio only if the user turned it on.
@@ -177,27 +184,96 @@ class PlaybackService : MediaLibraryService() {
     private suspend fun children(parentId: String): List<MediaItem> {
         val repo = AppGraph.repo
         return when (parentId) {
+            // Android Auto shows up to four browsable root items as tabs.
             MediaIds.ROOT -> listOf(
-                folderItem(MediaIds.DOWNLOADS, "Downloads", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED),
-                folderItem(MediaIds.PLAYLISTS, "Playlists", MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS),
+                folderItem(MediaIds.PICK_UP, "Pick up", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED),
+                folderItem(MediaIds.DOWNLOADS, "Offline", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED),
                 folderItem(MediaIds.PODCASTS, "Podcasts", MediaMetadata.MEDIA_TYPE_FOLDER_PODCASTS),
-                folderItem(MediaIds.LIKED, "Liked songs", MediaMetadata.MEDIA_TYPE_PLAYLIST),
+                folderItem(MediaIds.PLAYLISTS, "Playlists", MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS),
             )
+            MediaIds.PICK_UP -> pickUp()
             MediaIds.DOWNLOADS -> withContext(Dispatchers.IO) { Downloads.completed() }
-                .take(CAR_PAGE).map { it.toMediaItem() }.also { lastBrowsedList = it }
-            MediaIds.PLAYLISTS -> repo.libraryCollections(InnerTube.LIBRARY_PLAYLISTS).items
-                .filter { it.kind == CollectionKind.PLAYLIST }
-                .take(CAR_PAGE).map { it.toFolderItem() }
+                .take(CAR_PAGE).let(::carList)
+            MediaIds.PLAYLISTS -> listOf(folderItem(MediaIds.LIKED, "Liked songs", MediaMetadata.MEDIA_TYPE_PLAYLIST)) +
+                repo.libraryCollections(InnerTube.LIBRARY_PLAYLISTS).items
+                    .filter { it.kind == CollectionKind.PLAYLIST && it.browseId != InnerTube.LIKED_SONGS }
+                    .take(CAR_PAGE - 1).map { it.toFolderItem() }
             MediaIds.PODCASTS -> repo.libraryCollections(InnerTube.LIBRARY_PODCASTS).items
                 .take(CAR_PAGE).map { it.toFolderItem() }
             MediaIds.LIKED -> repo.collectionTracks(InnerTube.LIKED_SONGS).items
-                .take(CAR_PAGE).map { it.toMediaItem() }.also { lastBrowsedList = it }
+                .take(CAR_PAGE).let(::carList)
             else -> {
                 val browseId = MediaIds.browseIdOf(parentId) ?: return emptyList()
                 repo.collectionTracks(browseId).items
-                    .take(CAR_PAGE).map { it.toMediaItem() }.also { lastBrowsedList = it }
+                    .take(CAR_PAGE).let(::carList)
             }
         }
+    }
+
+    /** Rows for a song list; tapping one queues the rest of this list after it. */
+    private fun carList(tracks: List<Track>): List<MediaItem> {
+        lastBrowsedList = tracks.map { it.toMediaItem() }
+        return tracks.map { it.toCarItem(resume) }
+    }
+
+    /**
+     * The car's first tab: continue the series in progress, the part after it, then the
+     * collections you played from recently.
+     */
+    private fun pickUp(): List<MediaItem> {
+        val out = ArrayList<MediaItem>()
+        val series = AppGraph.recentSeries.last()
+        val at = series?.let { continueIndex(resume, it.tracks) }
+        if (series != null && at != null) {
+            val tracks = series.tracks
+            val short = Titles.distinct(tracks.map { it.title })
+            // Tapping either row queues the whole series from that part, with real titles.
+            lastBrowsedList = tracks.map { it.toMediaItem() }
+            val current = tracks[at]
+            val left = progressOf(resume, current) ?: current.durationSec?.let { formatDuration(it) }
+            out += current.toCarItem(
+                resume,
+                title = "Continue: ${short[at]}",
+                subtitle = listOfNotNull(series.collection.title, left).joinToString(" · "),
+            )
+            tracks.getOrNull(at + 1)?.let { next ->
+                out += next.toCarItem(
+                    resume,
+                    title = short[at + 1],
+                    subtitle = listOfNotNull("Next in series", next.durationSec?.let { formatDuration(it) }).joinToString(" · "),
+                )
+            }
+        }
+        AppGraph.recentSeries.recentCollections()
+            .filter { it.browseId != series?.collection?.browseId || at == null }
+            .take(4)
+            .forEach { out += it.toFolderItem(group = "Recently played") }
+        if (out.isEmpty()) out += folderItem(MediaIds.LIKED, "Liked songs", MediaMetadata.MEDIA_TYPE_PLAYLIST)
+        return out
+    }
+
+    /** Back 15 s / ahead 30 s beside previous and next, for long items only. */
+    private fun updateCarButtons() {
+        val long = player.duration != C.TIME_UNSET && player.duration >= LONG_ITEM_MS
+        val buttons = if (!long) ImmutableList.of() else ImmutableList.of(
+            CommandButton.Builder(CommandButton.ICON_SKIP_BACK_15)
+                .setDisplayName("Back 15 seconds")
+                .setSessionCommand(SessionCommand(CMD_BACK_15, Bundle.EMPTY))
+                .setSlots(CommandButton.SLOT_BACK_SECONDARY, CommandButton.SLOT_OVERFLOW)
+                .build(),
+            CommandButton.Builder(CommandButton.ICON_SKIP_FORWARD_30)
+                .setDisplayName("Forward 30 seconds")
+                .setSessionCommand(SessionCommand(CMD_FORWARD_30, Bundle.EMPTY))
+                .setSlots(CommandButton.SLOT_FORWARD_SECONDARY, CommandButton.SLOT_OVERFLOW)
+                .build(),
+        )
+        session?.setMediaButtonPreferences(buttons)
+    }
+
+    private fun seekBy(deltaMs: Long) {
+        var target = (player.currentPosition + deltaMs).coerceAtLeast(0)
+        if (player.duration != C.TIME_UNSET) target = target.coerceAtMost((player.duration - 1_000).coerceAtLeast(0))
+        player.seekTo(target)
     }
 
     private inner class LibraryCallback : MediaLibrarySession.Callback {
@@ -206,6 +282,8 @@ class PlaybackService : MediaLibraryService() {
             val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
                 .add(SessionCommand(CMD_SLEEP, Bundle.EMPTY))
                 .add(SessionCommand(CMD_RADIO, Bundle.EMPTY))
+                .add(SessionCommand(CMD_BACK_15, Bundle.EMPTY))
+                .add(SessionCommand(CMD_FORWARD_30, Bundle.EMPTY))
                 .build()
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                 .setAvailableSessionCommands(commands)
@@ -221,6 +299,8 @@ class PlaybackService : MediaLibraryService() {
             when (customCommand.customAction) {
                 CMD_SLEEP -> setSleepTimer(args.getInt(ARG_MINUTES))
                 CMD_RADIO -> startRadio()
+                CMD_BACK_15 -> seekBy(-15_000)
+                CMD_FORWARD_30 -> seekBy(30_000)
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
         }
@@ -317,6 +397,8 @@ class PlaybackService : MediaLibraryService() {
     companion object {
         const val CMD_SLEEP = "app.lull.SLEEP"
         const val CMD_RADIO = "app.lull.RADIO"
+        const val CMD_BACK_15 = "app.lull.BACK_15"
+        const val CMD_FORWARD_30 = "app.lull.FORWARD_30"
         const val ARG_MINUTES = "minutes"
         private const val CAR_PAGE = 30
         private const val CAR_SEARCH = 10
