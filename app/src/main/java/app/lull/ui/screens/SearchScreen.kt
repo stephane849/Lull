@@ -185,6 +185,9 @@ private fun ResultRow(vm: AppViewModel, item: Any, label: String?, resumeVersion
     }
 }
 
+/** The word for a collection's kind, used as the title of its page. */
+internal fun MusicCollection.kindLabel(): String = kindName(kind)
+
 private fun kindName(kind: CollectionKind) = when (kind) {
     CollectionKind.PLAYLIST -> "Playlist"
     CollectionKind.ALBUM -> "Album"
