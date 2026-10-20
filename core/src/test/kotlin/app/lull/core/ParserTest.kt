@@ -135,4 +135,30 @@ class ParserTest {
         val json = """{"header":{"musicImmersiveHeaderRenderer":{"subscriptionButton":{"subscribeButtonRenderer":{"channelId":"UCabc","subscribed":true}}}}}"""
         assertEquals(Subscription("UCabc", true), Parser.subscription(Json.parseToJsonElement(json)))
     }
+
+    @Test
+    fun readsSearchSections() {
+        val json = """
+        {"contents":[
+          {"musicShelfRenderer":{"title":{"runs":[{"text":"Episodes"}]},"contents":[
+            {"musicResponsiveListItemRenderer":{
+              "playlistItemData":{"videoId":"ep000000001"},
+              "flexColumns":[
+                {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Shama'il (Part 5)"}]}}},
+                {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Episode"},{"text":" • "},{"text":"The Majlis"}]}}}
+              ]}}]}},
+          {"musicShelfRenderer":{"title":{"runs":[{"text":"Podcasts"}]},"contents":[
+            {"musicResponsiveListItemRenderer":{
+              "navigationEndpoint":{"browseEndpoint":{"browseId":"MPSPabc"}},
+              "flexColumns":[
+                {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"al-Shamail"}]}}},
+                {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Podcast"},{"text":" • "},{"text":"The Majlis"}]}}}
+              ]}}]}}
+        ]}
+        """.trimIndent()
+        val sections = Parser.searchSections(Json.parseToJsonElement(json))
+        assertEquals(listOf("Episodes", "Podcasts"), sections.map { it.title })
+        assertEquals("The Majlis", sections[0].tracks.single().artist)
+        assertEquals("MPSPabc", sections[1].collections.single().browseId)
+    }
 }

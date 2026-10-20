@@ -19,6 +19,7 @@ import app.lull.ui.screens.LibraryScreen
 import app.lull.ui.screens.LibraryShelfScreen
 import app.lull.ui.screens.NowPlayingScreen
 import app.lull.ui.screens.QueueScreen
+import app.lull.ui.screens.SearchMoreScreen
 import app.lull.ui.screens.SearchScreen
 import app.lull.ui.screens.SettingsScreen
 import app.lull.ui.screens.SignInScreen
@@ -84,5 +85,6 @@ private fun LullRoot(vm: AppViewModel) {
         is Screen.EditPlaylist -> EditPlaylistScreen(vm, screen.collection)
         is Screen.CollectionActions -> CollectionActionsScreen(vm, screen.collection)
         is Screen.Shared -> SharedScreen(vm, screen)
+        is Screen.SearchMore -> SearchMoreScreen(vm, screen)
     }
 }

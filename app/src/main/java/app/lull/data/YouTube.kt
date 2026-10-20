@@ -8,6 +8,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo
+import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem
+import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubePlaylistLinkHandlerFactory
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeStreamLinkHandlerFactory
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
@@ -24,8 +26,9 @@ import org.schabi.newpipe.extractor.Page as NpPage
 class YouTube {
     private val pages = ConcurrentHashMap<String, NpPage>()
 
-    suspend fun search(query: String, continuation: String?): Page<Track> = withContext(Dispatchers.IO) {
-        val extractor = ServiceList.YouTube.getSearchExtractor(query, listOf("videos"), "")
+    /** Recordings (as [Track]) and playlists (as [MusicCollection]), in YouTube's order. */
+    suspend fun search(query: String, continuation: String?): Page<Any> = withContext(Dispatchers.IO) {
+        val extractor = ServiceList.YouTube.getSearchExtractor(query, emptyList(), "")
         val result = if (continuation == null) {
             extractor.fetchPage()
             extractor.initialPage
@@ -33,15 +36,30 @@ class YouTube {
             val page = pages.remove(continuation) ?: return@withContext Page(emptyList(), null)
             extractor.getPage(page)
         }
-        val tracks = result.items.filterIsInstance<StreamInfoItem>()
-            .filter { it.streamType == StreamType.VIDEO_STREAM && !it.isShortFormContent && it.duration >= MIN_SECONDS }
-            .mapNotNull { item ->
-                val id = runCatching { YoutubeStreamLinkHandlerFactory.getInstance().getId(item.url) }.getOrNull()
-                    ?: return@mapNotNull null
-                Track(id, item.name, item.uploaderName.orEmpty(), item.duration.toInt())
+        val items: List<Any> = result.items.mapNotNull { item ->
+            when (item) {
+                is StreamInfoItem -> {
+                    if (item.streamType != StreamType.VIDEO_STREAM || item.isShortFormContent || item.duration < MIN_SECONDS) return@mapNotNull null
+                    val id = runCatching { YoutubeStreamLinkHandlerFactory.getInstance().getId(item.url) }.getOrNull()
+                        ?: return@mapNotNull null
+                    Track(id, item.name, item.uploaderName.orEmpty(), item.duration.toInt())
+                }
+                is PlaylistInfoItem -> {
+                    val id = runCatching { YoutubePlaylistLinkHandlerFactory.getInstance().getId(item.url) }.getOrNull()
+                        ?: return@mapNotNull null
+                    // Mixes and radio lists can't be browsed as playlists.
+                    if (id.startsWith("RD")) return@mapNotNull null
+                    MusicCollection(
+                        "VL$id", item.name,
+                        listOfNotNull("YouTube playlist", item.uploaderName, item.streamCount.takeIf { it > 0 }?.let { "$it items" }).joinToString(" · "),
+                        CollectionKind.PLAYLIST,
+                    )
+                }
+                else -> null
             }
+        }
         val next = result.nextPage?.let { p -> UUID.randomUUID().toString().also { pages[it] = p } }
-        Page(tracks, next)
+        Page(items, next)
     }
 
     suspend fun video(videoId: String): Track = withContext(Dispatchers.IO) {

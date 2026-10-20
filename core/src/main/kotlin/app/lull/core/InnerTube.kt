@@ -56,6 +56,10 @@ class InnerTube(
         return Page(Parser.tracks(root), Parser.continuation(root))
     }
 
+    /** Everything at once, in sections. */
+    fun searchSections(query: String): List<SearchSection> =
+        Parser.searchSections(post("search", mapOf("query" to JsonPrimitive(query)), null))
+
     fun searchCollections(query: String, filter: SearchFilter, continuation: String? = null): Page<MusicCollection> {
         val root = post("search", search(query, filter), continuation)
         return Page(Parser.collections(root), Parser.continuation(root))

@@ -6,6 +6,7 @@ import app.lull.core.MusicCollection
 import app.lull.core.Page
 import app.lull.core.PlaylistTarget
 import app.lull.core.SearchFilter
+import app.lull.core.SearchSection
 import app.lull.core.Track
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -17,6 +18,8 @@ class Repository(private val api: InnerTube) {
 
     suspend fun searchTracks(query: String, continuation: String? = null, filter: SearchFilter = SearchFilter.SONGS): Page<Track> =
         io { api.searchTracks(query, continuation, filter) }
+
+    suspend fun searchSections(query: String): List<SearchSection> = io { api.searchSections(query) }
 
     suspend fun searchCollections(query: String, filter: SearchFilter, continuation: String? = null): Page<MusicCollection> =
         io { api.searchCollections(query, filter, continuation) }

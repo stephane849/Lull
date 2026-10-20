@@ -34,7 +34,6 @@ enum class SearchFilter(val params: String) {
     PLAYLISTS("EgeKAQQoAEABagoQAxAEEAoQCRAF"),
     PODCASTS("EgWKAQJQAWoMEA4QChADEAQQCRAF"),
     EPISODES("EgWKAQJIAWoMEA4QChADEAQQCRAF"),
-    VIDEOS("EgWKAQIQAWoMEA4QChADEAQQCRAF"),
     /** All of YouTube, searched through NewPipe rather than YouTube Music. */
     YOUTUBE(""),
 }
@@ -58,3 +57,6 @@ data class CollectionPage(
 
 /** An artist page's Subscribe button: the channel and whether you follow it. */
 data class Subscription(val channelId: String, val subscribed: Boolean)
+
+/** One block of an unfiltered YouTube Music search ("Songs", "Episodes", "Albums"…). */
+data class SearchSection(val title: String, val tracks: List<Track>, val collections: List<MusicCollection>)

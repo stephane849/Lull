@@ -20,6 +20,7 @@ import app.lull.core.Page
 import app.lull.core.PlaylistTarget
 import app.lull.core.SearchFilter
 import app.lull.core.Subscription
+import app.lull.core.SearchSection
 import app.lull.core.SharedLink
 import app.lull.core.YouTubeLinks
 import app.lull.core.Track
@@ -46,6 +47,7 @@ sealed interface Screen {
     data class AddToPlaylist(val track: Track) : Screen
     data class EditPlaylist(val collection: MusicCollection) : Screen
     data class CollectionActions(val collection: MusicCollection) : Screen
+    data class SearchMore(val query: String, val filter: SearchFilter, val title: String) : Screen
     /** A link shared from YouTube, being looked up. */
     data class Shared(val text: String) : Screen
 }
@@ -236,21 +238,70 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // --- search -------------------------------------------------------------------------
-    var query by mutableStateOf("")
-    var filter by mutableStateOf(SearchFilter.SONGS)
+    /** Where search looks: YouTube Music (sections) or all of YouTube (one list). */
+    var searchYouTube by mutableStateOf(false)
         private set
-    val searchResults = Paged<Any>(viewModelScope) { cont ->
-        val q = query.trim()
-        if (filter == SearchFilter.YOUTUBE) {
-            youTube.search(q, cont).let { Page(it.items, it.continuation) }
-        } else if (filter == SearchFilter.SONGS || filter == SearchFilter.EPISODES || filter == SearchFilter.VIDEOS) {
-            repo.searchTracks(q, cont, filter).let { Page(it.items, it.continuation) }
-        }
-        else repo.searchCollections(q, filter, cont).let { Page(it.items, it.continuation) }
+    var query by mutableStateOf("")
+    /** The query the results on screen belong to; null before the first search. */
+    var searchedQuery by mutableStateOf<String?>(null)
+        private set
+
+    var musicSections by mutableStateOf<List<SearchSection>>(emptyList())
+        private set
+    var musicLoading by mutableStateOf(false)
+        private set
+    var musicError by mutableStateOf<String?>(null)
+        private set
+
+    /** All of YouTube: recordings and playlists, paged. */
+    val youTubeResults = Paged<Any>(viewModelScope) { cont ->
+        youTube.search(query.trim(), cont).let { Page(it.items, it.continuation) }
     }
 
-    fun search() { if (query.isNotBlank()) searchResults.start() }
-    fun setSearchFilter(f: SearchFilter) { filter = f; search() }
+    private val sourceKey get() = if (searchYouTube) "youtube" else "music"
+    var recentSearches by mutableStateOf(AppGraph.settings.recentSearches("music"))
+        private set
+
+    fun setSearchSource(youTube: Boolean) {
+        if (searchYouTube == youTube) return
+        searchYouTube = youTube
+        recentSearches = AppGraph.settings.recentSearches(sourceKey)
+        searchedQuery = null
+        if (query.isNotBlank()) search()
+    }
+
+    fun search(text: String = query) {
+        val q = text.trim()
+        if (q.isEmpty()) return
+        query = q
+        searchedQuery = q
+        AppGraph.settings.addRecentSearch(sourceKey, q)
+        recentSearches = AppGraph.settings.recentSearches(sourceKey)
+        if (searchYouTube) {
+            youTubeResults.start()
+        } else {
+            musicLoading = true
+            musicError = null
+            viewModelScope.launch {
+                runCatching { repo.searchSections(q) }
+                    .onSuccess { musicSections = it }
+                    .onFailure { musicSections = emptyList(); musicError = "Couldn't search. Check your connection." }
+                musicLoading = false
+            }
+        }
+    }
+
+    /** "More ›" from a section: the full, paged list of that kind. */
+    private val moreResults = HashMap<Pair<String, SearchFilter>, Paged<Any>>()
+    fun moreResults(q: String, filter: SearchFilter): Paged<Any> = moreResults.getOrPut(q to filter) {
+        Paged(viewModelScope) { cont ->
+            if (filter == SearchFilter.SONGS || filter == SearchFilter.EPISODES) {
+                repo.searchTracks(q, cont, filter).let { Page(it.items, it.continuation) }
+            } else {
+                repo.searchCollections(q, filter, cont).let { Page(it.items, it.continuation) }
+            }
+        }
+    }
 
     // --- library ------------------------------------------------------------------------
     private val shelves = HashMap<String, Paged<MusicCollection>>()

@@ -60,6 +60,16 @@ object Parser {
             Subscription(id, (r["subscribed"] as? JsonPrimitive)?.content == "true")
         }
 
+    /** The titled shelves of an unfiltered search, in YouTube Music's own order. */
+    fun searchSections(root: JsonElement): List<SearchSection> =
+        findAll(root, "musicShelfRenderer").mapNotNull { shelf ->
+            val title = runsText(shelf["title"]).trim().ifEmpty { return@mapNotNull null }
+            val rows = findAll(shelf, "musicResponsiveListItemRenderer")
+            val tracks = rows.mapNotNull(::trackFrom).distinctBy { it.videoId }
+            val collections = rows.mapNotNull(::collectionFromList).distinctBy { it.browseId }
+            if (tracks.isEmpty() && collections.isEmpty()) null else SearchSection(title, tracks, collections)
+        }
+
     /** Your own playlists have an editable header (rename, edit) instead of a Save button. */
     fun isEditable(root: JsonElement): Boolean =
         findAll(root, "musicEditablePlaylistDetailHeaderRenderer").isNotEmpty()

@@ -41,4 +41,15 @@ class Settings(context: Context) {
         if (reversed) set.add(browseId) else set.remove(browseId)
         prefs.edit().putStringSet("reversed_lists", set).apply()
     }
+
+    /** Last five searches for one source ("music" or "youtube"), newest first. */
+    fun recentSearches(source: String): List<String> =
+        prefs.getString("recent_search_$source", "").orEmpty().split('\n').filter { it.isNotBlank() }
+
+    fun addRecentSearch(source: String, query: String) {
+        val q = query.trim().replace('\n', ' ')
+        if (q.isEmpty()) return
+        val list = (listOf(q) + recentSearches(source).filter { !it.equals(q, ignoreCase = true) }).take(5)
+        prefs.edit().putString("recent_search_$source", list.joinToString("\n")).apply()
+    }
 }

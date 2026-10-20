@@ -168,11 +168,12 @@ fun TrackRow(
     displayTitle: String = track.title,
     showArtist: Boolean = true,
     progress: String? = null,
+    label: String? = null,
 ) {
     val artist = track.artist.takeIf { showArtist && it.isNotBlank() && !Titles.isCount(it) }
     ListRow(
         title = displayTitle,
-        subtitle = listOfNotNull(artist, track.durationSec?.let(::formatDuration), progress).joinToString(" · "),
+        subtitle = listOfNotNull(label, artist, track.durationSec?.let(::formatLength), progress).joinToString(" · "),
         onClick = onPlay,
         onLongClick = onQueue,
         leading = number?.toString(),
@@ -331,6 +332,17 @@ fun formatLeft(ms: Long): String {
         min < 60 -> "$min min left"
         min % 60 == 0 -> "${min / 60} hr left"
         else -> "${min / 60} hr ${min % 60} min left"
+    }
+}
+
+/** Songs as "3:05"; talks and episodes as "48 min" or "1 hr 12 min". */
+fun formatLength(seconds: Int): String {
+    if (seconds < 600) return formatDuration(seconds)
+    val min = (seconds + 30) / 60
+    return when {
+        min < 60 -> "$min min"
+        min % 60 == 0 -> "${min / 60} hr"
+        else -> "${min / 60} hr ${min % 60} min"
     }
 }
 
