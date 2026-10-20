@@ -57,7 +57,9 @@ class Paged<T>(
     var started by mutableStateOf(false)
         private set
     private var continuation: String? = null
-    private var exhausted = false
+    /** True once the server has no more pages, so the item count is final. */
+    var exhausted by mutableStateOf(false)
+        private set
 
     val pageItems: List<T> get() = items.drop(page * pageSize).take(pageSize)
     val hasPrevious: Boolean get() = page > 0

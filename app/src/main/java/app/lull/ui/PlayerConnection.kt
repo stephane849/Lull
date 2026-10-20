@@ -1,5 +1,6 @@
 package app.lull.ui
 
+import app.lull.core.Titles
 import android.content.ComponentName
 import android.content.Context
 import android.os.Bundle
@@ -79,14 +80,14 @@ class PlayerConnection(context: Context, scope: CoroutineScope) {
             hasMedia = current != null,
             videoId = current?.let { MediaIds.videoIdOf(it.mediaId) },
             title = current?.mediaMetadata?.title?.toString().orEmpty(),
-            artist = current?.mediaMetadata?.artist?.toString().orEmpty(),
+            artist = current?.mediaMetadata?.artist?.toString().orEmpty().takeUnless(Titles::isCount).orEmpty(),
             isPlaying = c.isPlaying,
             positionMs = c.currentPosition,
             durationMs = c.duration.coerceAtLeast(0),
             index = c.currentMediaItemIndex,
             queue = (0 until c.mediaItemCount).map { i ->
                 val m = c.getMediaItemAt(i).mediaMetadata
-                QueueEntry(m.title?.toString().orEmpty(), m.artist?.toString().orEmpty())
+                QueueEntry(m.title?.toString().orEmpty(), m.artist?.toString().orEmpty().takeUnless(Titles::isCount).orEmpty())
             },
             source = source,
             speed = c.playbackParameters.speed,

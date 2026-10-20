@@ -75,7 +75,7 @@ object Parser {
         val artist = if (artistRuns.isNotEmpty()) artistRuns.joinToString(", ")
         else texts.firstOrNull { t ->
             t.isNotEmpty() && t != "•" && t !in TYPE_WORDS && !DURATION.matches(t) &&
-                !t.contains("plays") && !t.contains("views")
+                !Titles.isCount(t)
         }.orEmpty()
 
         val fixed = runsText(path(r, "fixedColumns", 0, "musicResponsiveListItemFixedColumnRenderer", "text"))
@@ -90,7 +90,7 @@ object Parser {
         val title = runsText(r["title"]).trim().ifEmpty { return null }
         val parts = runsText(r["subtitle"]).split("•").map { it.trim() }.filter { it.isNotEmpty() }
         val duration = parts.firstNotNullOfOrNull { parseSpokenDuration(it) ?: parseDuration(it) }
-        val date = parts.firstOrNull { parseSpokenDuration(it) == null && parseDuration(it) == null }
+        val date = parts.firstOrNull { parseSpokenDuration(it) == null && parseDuration(it) == null && !Titles.isCount(it) }
         val show = runsText(r["secondTitle"]).trim()
         return Track(videoId, title, date ?: show, duration)
     }

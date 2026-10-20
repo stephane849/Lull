@@ -11,17 +11,21 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.lull.core.CollectionKind
 import app.lull.core.InnerTube
 import app.lull.core.MusicCollection
 import app.lull.core.Page
+import app.lull.core.Titles
 import app.lull.core.Track
 import app.lull.ui.AppViewModel
 import app.lull.ui.Paged
 import app.lull.ui.Screen
 import app.lull.ui.components.Glyph
+import app.lull.ui.components.Ink
 import app.lull.ui.components.IconTarget
 import app.lull.ui.components.LineIcon
 import app.lull.ui.components.ListRow
@@ -32,10 +36,12 @@ import app.lull.ui.components.Pager
 import app.lull.ui.components.PrimaryButton
 import app.lull.ui.components.ScreenFrame
 import app.lull.ui.components.SecondaryButton
+import app.lull.ui.components.SquareIconButton
 import app.lull.ui.components.TrackRow
 import app.lull.ui.components.formatBytes
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import com.mudita.mmd.components.divider.HorizontalDividerMMD
 import com.mudita.mmd.components.text.TextMMD
 
 @Composable
@@ -79,7 +85,7 @@ fun DownloadsScreen(vm: AppViewModel) {
         paged.pageItems.forEachIndexed { i, track ->
             ListRow(
                 title = track.title,
-                subtitle = track.artist,
+                subtitle = track.artist.takeUnless(Titles::isCount),
                 onClick = { vm.player.play(tracks, paged.page * paged.pageSize + i, "Downloads") },
                 onLongClick = { vm.player.addToQueue(track) },
                 trailing = { IconTarget(Glyph.CLOSE, "Remove download of ${track.title}", { vm.removeDownload(track.videoId) }) },
@@ -108,30 +114,46 @@ fun CollectionScreen(vm: AppViewModel, collection: MusicCollection) {
     val paged = vm.collectionTracks(collection.browseId)
     LaunchedEffect(paged) { if (!paged.started) paged.start() }
     val tracks = paged.items
+    val isPodcast = collection.kind == CollectionKind.PODCAST
+    val noun = if (isPodcast) "episode" else "song"
+    // Lecture series repeat the same title on every row; show only the part that differs.
+    val shortTitles = remember(tracks) { Titles.distinct(tracks.map { it.title }) }
+    // The owner's name is already under the title, so rows only repeat it when it differs.
+    val owner = collection.subtitle.substringAfterLast("• ").trim()
 
     ScreenFrame(title = collection.kindLabel().ifEmpty { null } ?: collection.title, onBack = { vm.back() }, bottom = miniPlayerBar(vm)) {
         Column(Modifier.padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 4.dp)) {
-            TextMMD(collection.title, fontSize = 32.sp, fontWeight = FontWeight.Bold, lineHeight = 36.sp)
+            TextMMD(collection.title, fontSize = 30.sp, fontWeight = FontWeight.Bold, lineHeight = 34.sp,
+                maxLines = 3, overflow = TextOverflow.Ellipsis)
             val allDownloaded = tracks.isNotEmpty() && tracks.all { it.videoId in vm.downloaded }
+            val count = when {
+                tracks.isEmpty() -> null
+                !paged.exhausted -> "${tracks.size}+ ${noun}s"
+                tracks.size == 1 -> "1 $noun"
+                else -> "${tracks.size} ${noun}s"
+            }
             val meta = listOfNotNull(
                 collection.subtitle.ifBlank { null },
-                if (tracks.isNotEmpty()) "${tracks.size} songs" else null,
+                count,
                 if (allDownloaded) "Downloaded" else null,
             ).joinToString(" · ")
             if (meta.isNotEmpty()) TextMMD(meta, fontSize = 16.sp, color = Muted, modifier = Modifier.padding(top = 8.dp))
         }
         PlayButtons(vm, tracks, collection.title, showDownload = true)
-        PagedStatus(paged, empty = "No songs.")
+        HorizontalDividerMMD(thickness = 2.dp, color = Ink)
+        PagedStatus(paged, empty = "No ${noun}s.")
         paged.pageItems.forEachIndexed { i, track ->
             val index = paged.page * paged.pageSize + i
             TrackRow(
-                track = track.copy(artist = track.artist.ifBlank { collection.subtitle.substringAfterLast("• ").trim() }),
+                track = track,
                 downloaded = track.videoId in vm.downloaded,
                 downloading = track.videoId in vm.downloading,
                 onPlay = { vm.player.play(tracks, index, collection.title) },
                 onQueue = { vm.player.addToQueue(track) },
                 onDownload = { vm.download(track) },
                 number = index + 1,
+                displayTitle = shortTitles.getOrElse(index) { track.title },
+                showArtist = !track.artist.equals(owner, ignoreCase = true),
             )
         }
         if (tracks.isNotEmpty()) Pager(paged)
@@ -142,19 +164,18 @@ fun CollectionScreen(vm: AppViewModel, collection: MusicCollection) {
 private fun PlayButtons(vm: AppViewModel, tracks: List<Track>, source: String, showDownload: Boolean) {
     if (tracks.isEmpty()) return
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         PrimaryButton("Play", Glyph.PLAY, { vm.player.play(tracks, 0, source) }, Modifier.weight(1f))
         SecondaryButton("Shuffle", Glyph.SHUFFLE, { vm.player.shuffle(tracks, source) }, Modifier.weight(1f))
         if (showDownload) {
             val allDone = tracks.all { it.videoId in vm.downloaded }
-            IconTarget(
+            SquareIconButton(
                 if (allDone) Glyph.DOWNLOADED else Glyph.DOWNLOAD,
                 if (allDone) "All downloaded" else "Download all",
-                { if (!allDone) vm.downloadAll(tracks) },
-                iconSize = 26,
-                modifier = Modifier.size(56.dp),
+                { vm.downloadAll(tracks) },
+                enabled = !allDone,
             )
         }
     }

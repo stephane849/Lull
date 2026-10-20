@@ -8,6 +8,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -31,9 +32,11 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.lull.core.Titles
 import app.lull.core.Track
 import app.lull.ui.Paged
 import app.lull.ui.PlayerUi
@@ -119,21 +122,28 @@ fun ListRow(
     leading: String? = null,
     trailing: (@Composable () -> Unit)? = null,
     big: Boolean = false,
+    titleLines: Int = 1,
+    label: String? = null,
 ) {
     Row(
         Modifier.fillMaxWidth()
-            .heightIn(min = if (big) 84.dp else 64.dp)
+            .heightIn(min = if (big) 84.dp else 68.dp)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(start = 20.dp, end = 8.dp),
+            .then(if (label != null) Modifier.semantics { contentDescription = label } else Modifier)
+            .padding(start = if (leading != null) 12.dp else 20.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (leading != null) TextMMD(leading, fontSize = 16.sp, color = Muted, modifier = Modifier.width(32.dp))
-        Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
+        if (leading != null) {
+            TextMMD(leading, fontSize = 16.sp, color = Muted, textAlign = TextAlign.End, maxLines = 1,
+                modifier = Modifier.width(30.dp).padding(end = 2.dp))
+            Spacer(Modifier.width(14.dp))
+        }
+        Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
             TextMMD(title, fontSize = if (big) 22.sp else 18.sp, fontWeight = FontWeight.Bold,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                lineHeight = if (big) 26.sp else 22.sp, maxLines = titleLines, overflow = TextOverflow.Ellipsis)
             if (!subtitle.isNullOrBlank()) {
                 TextMMD(subtitle, fontSize = if (big) 15.sp else 14.sp, color = Muted,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
             }
         }
         trailing?.invoke()
@@ -141,6 +151,10 @@ fun ListRow(
     HorizontalDividerMMD(thickness = 1.dp, color = Ink)
 }
 
+/**
+ * A song or episode. [displayTitle] lets a list show only the part of the title that
+ * differs (see Titles.distinct); the full title is still what screen readers hear.
+ */
 @Composable
 fun TrackRow(
     track: Track,
@@ -150,13 +164,18 @@ fun TrackRow(
     onQueue: () -> Unit,
     onDownload: () -> Unit,
     number: Int? = null,
+    displayTitle: String = track.title,
+    showArtist: Boolean = true,
 ) {
+    val artist = track.artist.takeIf { showArtist && it.isNotBlank() && !Titles.isCount(it) }
     ListRow(
-        title = track.title,
-        subtitle = listOfNotNull(track.artist.ifBlank { null }, track.durationSec?.let(::formatDuration)).joinToString(" · "),
+        title = displayTitle,
+        subtitle = listOfNotNull(artist, track.durationSec?.let(::formatDuration)).joinToString(" · "),
         onClick = onPlay,
         onLongClick = onQueue,
         leading = number?.toString(),
+        titleLines = 2,
+        label = if (displayTitle != track.title) track.title else null,
         trailing = {
             when {
                 downloaded -> Box(Modifier.size(48.dp).semantics { contentDescription = "Downloaded" }, Alignment.Center) { LineIcon(Glyph.DOWNLOADED) }
@@ -202,11 +221,14 @@ fun MiniPlayer(state: PlayerUi, onOpen: () -> Unit, onToggle: () -> Unit) {
     HorizontalDividerMMD(thickness = 2.dp, color = Ink)
     Row(
         Modifier.fillMaxWidth().height(68.dp).padding(start = 20.dp, end = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f).clickable(onClick = onOpen)) {
-            TextMMD(state.title, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            TextMMD(state.artist, fontSize = 14.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // Middle ellipsis keeps the end of the title, where "(Part 3)" or "Ep. 12" usually is.
+            TextMMD(state.title, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.MiddleEllipsis)
+            val sub = state.artist.takeUnless { it.isBlank() || Titles.isCount(it) }
+            if (sub != null) TextMMD(sub, fontSize = 14.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Box(
             Modifier.size(48.dp)
@@ -218,26 +240,42 @@ fun MiniPlayer(state: PlayerUi, onOpen: () -> Unit, onToggle: () -> Unit) {
     }
 }
 
+private val ButtonPadding = PaddingValues(horizontal = 12.dp)
+
 @Composable
 fun PrimaryButton(label: String, glyph: Glyph?, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    ButtonMMD(onClick = onClick, modifier = modifier.height(56.dp)) {
-        if (glyph != null) {
-            LineIcon(glyph, size = 22.dp, color = Paper)
-            Spacer(Modifier.width(10.dp))
-        }
-        TextMMD(label, fontSize = 19.sp, fontWeight = FontWeight.Bold, color = Paper)
+    ButtonMMD(onClick = onClick, modifier = modifier.height(56.dp), contentPadding = ButtonPadding) {
+        ButtonContent(label, glyph, Paper)
     }
 }
 
 @Composable
 fun SecondaryButton(label: String, glyph: Glyph?, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    OutlinedButtonMMD(onClick = onClick, modifier = modifier.height(56.dp)) {
-        if (glyph != null) {
-            LineIcon(glyph, size = 22.dp)
-            Spacer(Modifier.width(10.dp))
-        }
-        TextMMD(label, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+    OutlinedButtonMMD(onClick = onClick, modifier = modifier.height(56.dp), contentPadding = ButtonPadding) {
+        ButtonContent(label, glyph, Ink)
     }
+}
+
+/** Icon and label on one line: labels never wrap, they shrink to an ellipsis first. */
+@Composable
+private fun ButtonContent(label: String, glyph: Glyph?, color: Color) {
+    if (glyph != null) {
+        LineIcon(glyph, size = 20.dp, color = color)
+        Spacer(Modifier.width(8.dp))
+    }
+    TextMMD(label, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = color,
+        maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+}
+
+/** A square outlined icon button, the same height, border and corners as [SecondaryButton]. */
+@Composable
+fun SquareIconButton(glyph: Glyph, label: String, onClick: () -> Unit, enabled: Boolean = true) {
+    OutlinedButtonMMD(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.size(56.dp).semantics { contentDescription = label },
+        contentPadding = PaddingValues(0.dp),
+    ) { LineIcon(glyph, size = 24.dp) }
 }
 
 fun formatDuration(seconds: Int): String {
