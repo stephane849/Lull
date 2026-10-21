@@ -23,15 +23,19 @@ The queue ends when it ends.
 - Android Auto: text-only lists (Downloads, Playlists, Podcasts, Liked songs), 30 rows max, voice and
   typed search, one shared player, small buffer for phones with little RAM.
 
+## Install
+
+Download the latest `Lull-vX.Y.Z.apk` from [Releases](https://github.com/stephane849/Lull/releases)
+and open it on the phone. Releases are signed with one fixed key, so later releases install
+as updates.
+
 ## Build
 
-**With GitHub (no setup):** push this folder to a GitHub repository. The included workflow
-builds a debug APK on every push. Open the run under **Actions** and download
-`lull-debug-apk`.
+**With GitHub (no setup):** every push builds a debug APK; open the run under **Actions** and
+download `lull-debug-apk`. Pushing a tag like `v1.0.1` builds a signed APK and publishes a
+release (needs the `LULL_KEYSTORE_B64` and `LULL_KEYSTORE_PASSWORD` repository secrets).
 
 **With Android Studio:** open the folder, let Gradle sync, then Run. Requires JDK 17+.
-
-Install on the phone with `adb install app-debug.apk`, or copy the APK over and open it.
 
 ## Android Auto
 
@@ -62,12 +66,6 @@ YouTube changes things without notice. The fragile pieces are isolated:
 Library versions were picked in October 2026 and couldn't be test-compiled in the
 environment that wrote them; if Gradle sync complains about a version, take the version it
 suggests.
-
-## Before publishing
-
-- Set `SOURCE_URL` in `app/.../ui/screens/SettingsScreen.kt` to your repository.
-- Release builds are signed with the debug key so CI APKs install directly. Use your own key
-  for anything you distribute.
 
 ## Disclaimer
 

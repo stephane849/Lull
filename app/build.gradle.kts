@@ -14,15 +14,29 @@ android {
         applicationId = "app.lull"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 100
+        versionName = "1.0.0"
+    }
+
+    // Releases are signed in CI with the key from the LULL_KEYSTORE_B64 / LULL_KEYSTORE_PASSWORD
+    // repository secrets (see .github/workflows/release.yml). Without them, release builds fall
+    // back to the debug key so local builds still work.
+    val releaseKeystore = System.getenv("LULL_KEYSTORE_FILE")?.let { file(it) }?.takeIf { it.exists() }
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = releaseKeystore
+                storePassword = System.getenv("LULL_KEYSTORE_PASSWORD")
+                keyAlias = "lull"
+                keyPassword = System.getenv("LULL_KEYSTORE_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Signed with the debug key so CI builds install directly. Use your own key for releases.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 

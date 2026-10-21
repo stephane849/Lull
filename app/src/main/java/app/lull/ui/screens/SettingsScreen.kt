@@ -30,7 +30,7 @@ import com.mudita.mmd.components.divider.HorizontalDividerMMD
 import com.mudita.mmd.components.switcher.SwitchMMD
 import com.mudita.mmd.components.text.TextMMD
 
-private const val SOURCE_URL = "https://github.com/"
+private const val SOURCE_URL = "https://github.com/stephane849/Lull"
 
 @Composable
 fun SettingsScreen(vm: AppViewModel) {
