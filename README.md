@@ -32,8 +32,10 @@ as updates.
 ## Build
 
 **With GitHub (no setup):** every push builds a debug APK; open the run under **Actions** and
-download `lull-debug-apk`. Pushing a tag like `v1.0.1` builds a signed APK and publishes a
-release (needs the `LULL_KEYSTORE_B64` and `LULL_KEYSTORE_PASSWORD` repository secrets).
+download `lull-debug-apk`. To publish a release, bump `versionName` / `versionCode` in
+`app/build.gradle.kts`, update `RELEASE_NOTES.md`, and push to the `release` branch: it builds
+a signed APK, tags `v<versionName>` and publishes it (needs the `LULL_KEYSTORE_B64` and
+`LULL_KEYSTORE_PASSWORD` repository secrets).
 
 **With Android Studio:** open the folder, let Gradle sync, then Run. Requires JDK 17+.
 

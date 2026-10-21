@@ -1,9 +1,10 @@
 name: Release
 
-# Push a tag like v1.0.0 to build a signed APK and publish it as a GitHub release.
+# Push to the `release` branch to build a signed APK and publish it as a GitHub release.
+# The tag (v + versionName from app/build.gradle.kts) is created by this workflow.
 on:
   push:
-    tags: ["v*"]
+    branches: [release]
 
 permissions:
   contents: write
@@ -20,6 +21,17 @@ jobs:
           java-version: 17
 
       - uses: gradle/actions/setup-gradle@v5
+
+      - name: Read version
+        run: |
+          v=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          echo "TAG=v$v" >> "$GITHUB_ENV"
+          if gh release view "v$v" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error title=Already released::v$v exists. Bump versionName and versionCode first."
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: Check signing secrets
         env:
@@ -39,12 +51,13 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew :core:test :app:assembleRelease --stacktrace
-          cp app/build/outputs/apk/release/app-release.apk "Lull-${GITHUB_REF_NAME}.apk"
+          cp app/build/outputs/apk/release/app-release.apk "Lull-${TAG}.apk"
 
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" "Lull-${GITHUB_REF_NAME}.apk" \
-            --title "Lull ${GITHUB_REF_NAME}" \
+          gh release create "$TAG" "Lull-${TAG}.apk" \
+            --target "$GITHUB_SHA" \
+            --title "Lull ${TAG}" \
             --notes-file RELEASE_NOTES.md
