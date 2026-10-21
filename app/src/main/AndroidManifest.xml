@@ -26,6 +26,31 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Tapping a YouTube / YouTube Music link can open Lull (turn on under
+                 Settings › Apps › Lull › Open by default, since only Google can verify these). -->
+            <intent-filter android:label="Lull">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:scheme="http" />
+                <data android:host="www.youtube.com" />
+                <data android:host="youtube.com" />
+                <data android:host="m.youtube.com" />
+                <data android:host="music.youtube.com" />
+                <data android:pathPrefix="/watch" />
+                <data android:pathPrefix="/playlist" />
+                <data android:pathPrefix="/shorts/" />
+                <data android:pathPrefix="/live/" />
+            </intent-filter>
+            <intent-filter android:label="Lull">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:scheme="http" />
+                <data android:host="youtu.be" />
+            </intent-filter>
             <!-- Share a YouTube video or playlist link to Lull. -->
             <intent-filter android:label="Lull">
                 <action android:name="android.intent.action.SEND" />

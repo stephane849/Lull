@@ -33,10 +33,13 @@ import com.mudita.mmd.ThemeMMD
 
 class MainActivity : ComponentActivity() {
 
-    /** "Share → Lull" from the YouTube app or a browser. */
+    /** "Share → Lull", or a tapped YouTube link that Android sent to Lull. */
     private fun handleShare(intent: Intent?) {
-        if (intent?.action != Intent.ACTION_SEND) return
-        val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return
+        val text = when (intent?.action) {
+            Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)
+            Intent.ACTION_VIEW -> intent.dataString
+            else -> null
+        } ?: return
         vm.openShared(text)
     }
 
