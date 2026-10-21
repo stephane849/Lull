@@ -43,6 +43,8 @@ class RecentSeries(context: Context) {
         prefs.edit().putString(KEY, o.toString()).apply()
     }
 
+    fun clear() = prefs.edit().remove(KEY).apply()
+
     /** Collections you played from, newest first (any kind), for the car's Pick up tab. */
     fun recentCollections(): List<MusicCollection> = runCatching {
         val arr = JSONArray(prefs.getString(RECENTS, "[]"))

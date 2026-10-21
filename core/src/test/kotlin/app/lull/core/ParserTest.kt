@@ -161,4 +161,18 @@ class ParserTest {
         assertEquals("The Majlis", sections[0].tracks.single().artist)
         assertEquals("MPSPabc", sections[1].collections.single().browseId)
     }
+
+    @Test
+    fun readsEpisodeLengthFromProgressBar() {
+        val json = """
+        {"contents":[{"musicMultiRowListItemRenderer":{
+          "title":{"runs":[{"text":"Part 5"}]},
+          "subtitle":{"runs":[{"text":"Oct 5, 2026"}]},
+          "playbackProgress":{"musicPlaybackProgressRenderer":{"durationText":{"runs":[{"text":"1 hr 2 min"}]}}},
+          "onTap":{"watchEndpoint":{"videoId":"ep000000005"}}}}]}
+        """.trimIndent()
+        val t = Parser.tracks(Json.parseToJsonElement(json)).single()
+        assertEquals(3720, t.durationSec)
+        assertEquals("Oct 5, 2026", t.artist)
+    }
 }

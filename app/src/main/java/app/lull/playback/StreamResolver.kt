@@ -6,6 +6,7 @@ import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.ResolvingDataSource
 import app.lull.data.Settings
 import org.schabi.newpipe.extractor.ServiceList
+import org.schabi.newpipe.extractor.stream.AudioTrackType
 import org.schabi.newpipe.extractor.stream.DeliveryMethod
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import java.io.IOException
@@ -19,7 +20,7 @@ import java.util.concurrent.ConcurrentHashMap
 class StreamResolver(context: Context, private val settings: Settings) : ResolvingDataSource.Resolver {
 
     private val connectivity = context.getSystemService(ConnectivityManager::class.java)
-    private val cache = ConcurrentHashMap<String, Pair<String, Long>>()
+    private val cache = ConcurrentHashMap<String, Pair<String, Long>>() // key includes "orig" so old dubbed picks aren't reused
 
     override fun resolveDataSpec(dataSpec: DataSpec): DataSpec {
         val uri = dataSpec.uri
@@ -37,7 +38,7 @@ class StreamResolver(context: Context, private val settings: Settings) : Resolvi
     }
 
     private fun audioUrl(videoId: String, high: Boolean): String {
-        val key = "$videoId|$high"
+        val key = "$videoId|$high|orig"
         cache[key]?.let { (url, expires) -> if (System.currentTimeMillis() < expires) return url }
 
         val info = try {
@@ -45,8 +46,13 @@ class StreamResolver(context: Context, private val settings: Settings) : Resolvi
         } catch (e: Exception) {
             throw IOException("Couldn't load song $videoId", e)
         }
-        val streams = info.audioStreams.filter { it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.isUrl }
-        if (streams.isEmpty()) throw IOException("No audio stream for $videoId")
+        val all = info.audioStreams.filter { it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.isUrl }
+        if (all.isEmpty()) throw IOException("No audio stream for $videoId")
+        // Many videos now carry AI-dubbed tracks in other languages (and audio description).
+        // Always play the original; fall back to any non-descriptive track, then anything.
+        val streams = all.filter { it.audioTrackType == null || it.audioTrackType == AudioTrackType.ORIGINAL }
+            .ifEmpty { all.filter { it.audioTrackType != AudioTrackType.DESCRIPTIVE } }
+            .ifEmpty { all }
 
         val chosen = if (high) {
             streams.maxBy { it.averageBitrate }

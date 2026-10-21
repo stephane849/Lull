@@ -578,11 +578,43 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** Plays from a collection page; lists of long items are remembered for "Pick up". */
     fun playFrom(collection: MusicCollection, tracks: List<Track>, index: Int, shuffle: Boolean = false) {
         if (collection.browseId != InnerTube.LIKED_SONGS) AppGraph.recentSeries.touch(collection)
-        if (tracks.any { (it.durationSec ?: 0) >= LONG_ITEM_SEC }) {
-            AppGraph.recentSeries.save(collection, tracks)
-            lastSeries = Series(collection, tracks.take(300))
-        }
+        val isSeries = collection.kind == CollectionKind.PODCAST ||
+            tracks.any { (lengthSec(resume, it) ?: 0) >= LONG_ITEM_SEC }
+        if (isSeries) rememberSeries(Series(collection, tracks.take(300)))
         if (shuffle) player.shuffle(tracks, collection.title) else player.play(tracks, index, collection.title)
+    }
+
+    private fun rememberSeries(series: Series) {
+        AppGraph.recentSeries.save(series.collection, series.tracks)
+        lastSeries = series
+        clearedFor = null
+    }
+
+    /** The item that was playing when Pick up was cleared; it won't bring the card back. */
+    private var clearedFor: String? = null
+
+    /** Hold the card → Clear. It comes back when you start something new. */
+    fun clearPickUp() {
+        AppGraph.recentSeries.clear()
+        lastSeries = null
+        clearedFor = player.state.value.videoId
+    }
+
+    /**
+     * Anything long that plays outside the remembered series (a single episode from Search,
+     * Play now, the car) becomes Pick up on its own: a "series" of one.
+     */
+    private fun followPlayback(state: PlayerUi) {
+        val id = state.videoId ?: return
+        if (!state.hasMedia || state.durationMs < LONG_ITEM_SEC * 1000L) return
+        if (id == clearedFor) return
+        if (lastSeries?.tracks?.any { it.videoId == id } == true) return
+        val track = Track(id, state.title, state.artist, (state.durationMs / 1000).toInt())
+        rememberSeries(Series(MusicCollection("", state.title, state.artist, CollectionKind.OTHER), listOf(track)))
+    }
+
+    init {
+        viewModelScope.launch { player.state.collect { followPlayback(it) } }
     }
 
     /** Oldest-first for podcasts and playlists, remembered per list. */

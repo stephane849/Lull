@@ -135,7 +135,12 @@ object Parser {
         val videoId = findAll(r, "watchEndpoint").firstNotNullOfOrNull { it["videoId"].str() } ?: return null
         val title = runsText(r["title"]).trim().ifEmpty { return null }
         val parts = runsText(r["subtitle"]).split("•").map { it.trim() }.filter { it.isNotEmpty() }
-        val duration = parts.firstNotNullOfOrNull { parseSpokenDuration(it) ?: parseDuration(it) }
+        // The length can sit in the subtitle ("Oct 5 • 58 min") or in the progress bar.
+        val progressLength = findAll(r, "musicPlaybackProgressRenderer")
+            .firstNotNullOfOrNull { p -> runsText(p["durationText"]).trim().ifEmpty { null } }
+        val duration = progressLength?.let { parseSpokenDuration(it) ?: parseDuration(it) }
+            ?: parts.firstNotNullOfOrNull { parseSpokenDuration(it) ?: parseDuration(it) }
+            ?: runsText(r["lengthText"]).let { parseSpokenDuration(it) ?: parseDuration(it.trim()) }
         val date = parts.firstOrNull { parseSpokenDuration(it) == null && parseDuration(it) == null && !Titles.isCount(it) }
         val show = runsText(r["secondTitle"]).trim()
         return Track(videoId, title, date ?: show, duration)

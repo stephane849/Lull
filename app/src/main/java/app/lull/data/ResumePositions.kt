@@ -19,6 +19,15 @@ class ResumePositions(context: Context) {
     fun isFinished(videoId: String): Boolean = prefs.getBoolean(DONE + videoId, false)
     fun lastPlayed(videoId: String): Long = prefs.getLong(AT + videoId, 0L)
 
+    /** Length learned from playback (ms), for items whose list didn't say how long they are. */
+    fun lengthMs(videoId: String): Long = prefs.getLong(LEN + videoId, 0L)
+
+    fun setLength(videoId: String, ms: Long) {
+        if (ms <= 0 || prefs.getLong(LEN + videoId, 0L) == ms) return
+        prefs.edit().putLong(LEN + videoId, ms).apply()
+        _version.value++
+    }
+
     fun set(videoId: String, positionMs: Long) {
         prefs.edit().putLong(videoId, positionMs).putLong(AT + videoId, now()).remove(DONE + videoId).apply()
         _version.value++
@@ -34,5 +43,6 @@ class ResumePositions(context: Context) {
     private companion object {
         const val DONE = "done:"
         const val AT = "at:"
+        const val LEN = "len:"
     }
 }

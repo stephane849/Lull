@@ -91,7 +91,11 @@ class PlaybackService : MediaLibraryService() {
         resume = AppGraph.resume
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
-                if (playbackState == Player.STATE_READY) updateCarButtons()
+                if (playbackState == Player.STATE_READY) {
+                    updateCarButtons()
+                    val d = player.duration
+                    if (d != C.TIME_UNSET) currentVideoId?.let { resume.setLength(it, d) }
+                }
                 if (playbackState == Player.STATE_ENDED) {
                     currentVideoId?.let(resume::finish)
                     // Mindful default: the queue simply ends. Radio only if the user turned it on.
@@ -223,7 +227,7 @@ class PlaybackService : MediaLibraryService() {
     private fun pickUp(): List<MediaItem> {
         val out = ArrayList<MediaItem>()
         val series = AppGraph.recentSeries.last()
-        val at = series?.let { continueIndex(resume, it.tracks) }
+        val at = series?.let { continueIndex(resume, it.tracks, assumeLong = it.collection.kind == CollectionKind.PODCAST) }
         if (series != null && at != null) {
             val tracks = series.tracks
             val short = Titles.distinct(tracks.map { it.title })
@@ -234,7 +238,7 @@ class PlaybackService : MediaLibraryService() {
             out += current.toCarItem(
                 resume,
                 title = "Continue: ${short[at]}",
-                subtitle = listOfNotNull(series.collection.title, left).joinToString(" · "),
+                subtitle = listOfNotNull(series.collection.title.takeIf { tracks.size > 1 } ?: series.collection.subtitle, left).joinToString(" · "),
             )
             tracks.getOrNull(at + 1)?.let { next ->
                 out += next.toCarItem(
@@ -245,7 +249,7 @@ class PlaybackService : MediaLibraryService() {
             }
         }
         AppGraph.recentSeries.recentCollections()
-            .filter { it.browseId != series?.collection?.browseId || at == null }
+            .filter { it.browseId.isNotEmpty() && (it.browseId != series?.collection?.browseId || at == null) }
             .take(4)
             .forEach { out += it.toFolderItem(group = "Recently played") }
         if (out.isEmpty()) out += folderItem(MediaIds.LIKED, "Liked songs", MediaMetadata.MEDIA_TYPE_PLAYLIST)

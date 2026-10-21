@@ -1,5 +1,12 @@
 package app.lull.ui.screens
 
+import app.lull.ui.components.formatLength
+import app.lull.ui.lengthSec
+import app.lull.core.CollectionKind
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -54,7 +61,9 @@ fun StartScreen(vm: AppViewModel) {
     val player by vm.player.state.collectAsStateWithLifecycle()
     val resumeVersion by vm.resume.version.collectAsStateWithLifecycle()
     val series = vm.lastSeries
-    val resumeAt = remember(series, resumeVersion) { series?.let { continueIndex(vm.resume, it.tracks) } }
+    val resumeAt = remember(series, resumeVersion) {
+        series?.let { continueIndex(vm.resume, it.tracks, assumeLong = it.collection.kind == CollectionKind.PODCAST) }
+    }
     // The card is the player while it holds what's playing; no separate mini player then.
     val cardIsPlaying = series != null && player.hasMedia &&
         series.tracks.any { it.videoId == player.videoId }
@@ -108,6 +117,7 @@ fun StartScreen(vm: AppViewModel) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PickUpCard(vm: AppViewModel, series: Series, resumeAt: Int?, player: PlayerUi, isCurrent: Boolean) {
     val tracks = series.tracks
@@ -120,12 +130,16 @@ private fun PickUpCard(vm: AppViewModel, series: Series, resumeAt: Int?, player:
         app.lull.ui.components.formatLeft((player.durationMs - player.positionMs).coerceAtLeast(0))
     } else {
         remember(track.videoId, resumeVersion) { progressOf(vm.resume, track) }
-            ?: track.durationSec?.let(::formatDuration)
+            ?: lengthSec(vm.resume, track)?.let(::formatLength)
     }
+    val single = series.collection.browseId.isEmpty()
+    var confirmClear by remember(series) { mutableStateOf(false) }
 
     Column(
         Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 18.dp)
             .border(2.5.dp, Ink, RoundedCornerShape(16.dp))
+            // Hold the card to clear it.
+            .combinedClickable(onClick = {}, onLongClick = { confirmClear = true }, onLongClickLabel = "Clear Pick up")
             .padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 16.dp),
     ) {
         TextMMD(if (isCurrent) "NOW PLAYING" else "PICK UP", fontSize = 14.sp, fontWeight = FontWeight.Bold,
@@ -133,7 +147,9 @@ private fun PickUpCard(vm: AppViewModel, series: Series, resumeAt: Int?, player:
         TextMMD(series.collection.title, fontSize = 24.sp, fontWeight = FontWeight.Bold, lineHeight = 29.sp,
             maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
         val label = shortTitles.getOrElse(index) { track.title }
-        val line = listOfNotNull(
+        val line = if (single) {
+            listOfNotNull(series.collection.subtitle.ifBlank { null }, left).joinToString(" · ")
+        } else listOfNotNull(
             if (label.length <= 28) label else "${index + 1} of ${tracks.size}",
             if (label.length <= 28 && tracks.size > 1) "${index + 1} of ${tracks.size}" else null,
             left,
@@ -147,7 +163,7 @@ private fun PickUpCard(vm: AppViewModel, series: Series, resumeAt: Int?, player:
                         vm.resume.isFinished(t.videoId) -> 1f
                         i == index && isCurrent && player.durationMs > 0 -> player.positionMs.toFloat() / player.durationMs
                         else -> {
-                            val dur = (t.durationSec ?: 0) * 1000f
+                            val dur = (lengthSec(vm.resume, t) ?: 0) * 1000f
                             if (dur > 0) vm.resume.get(t.videoId) / dur else 0f
                         }
                     }.coerceIn(0f, 1f)
@@ -156,14 +172,26 @@ private fun PickUpCard(vm: AppViewModel, series: Series, resumeAt: Int?, player:
             }
         }
 
-        Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (isCurrent) {
-                PrimaryButton(if (player.isPlaying) "Pause" else "Resume", if (player.isPlaying) Glyph.PAUSE else Glyph.PLAY,
-                    vm.player::toggle, Modifier.weight(1f))
-            } else {
-                PrimaryButton("Continue", Glyph.PLAY, { vm.playFrom(series.collection, tracks, index) }, Modifier.weight(1f))
+        if (confirmClear) {
+            TextMMD("Clear Pick up? It comes back when you start something new.", fontSize = 16.sp,
+                modifier = Modifier.padding(top = 14.dp))
+            Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                PrimaryButton("Clear", null, { vm.clearPickUp() }, Modifier.weight(1f))
+                SecondaryButton("Keep", null, { confirmClear = false }, Modifier.weight(1f))
             }
-            SecondaryButton("All parts", null, { vm.go(Screen.Collection(series.collection)) })
+        } else {
+            Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (isCurrent) {
+                    PrimaryButton(if (player.isPlaying) "Pause" else "Resume", if (player.isPlaying) Glyph.PAUSE else Glyph.PLAY,
+                        vm.player::toggle, Modifier.weight(1f))
+                } else {
+                    PrimaryButton("Continue", Glyph.PLAY, {
+                        if (single) vm.player.play(tracks, 0, series.collection.title)
+                        else vm.playFrom(series.collection, tracks, index)
+                    }, Modifier.weight(1f))
+                }
+                if (!single) SecondaryButton("All parts", null, { vm.go(Screen.Collection(series.collection)) })
+            }
         }
     }
 }
