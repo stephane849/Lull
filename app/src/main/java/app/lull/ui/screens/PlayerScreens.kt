@@ -106,7 +106,7 @@ fun NowPlayingScreen(vm: AppViewModel) {
             if (state.artist.isNotBlank()) TextMMD(state.artist, fontSize = 20.sp, modifier = Modifier.padding(top = 6.dp))
         }
 
-        // Position updates every 15 s, or right away when tapped. No ticking.
+        // Position updates every second while playing, or right away when tapped.
         Column(Modifier.fillMaxWidth().clickable { vm.player.refresh() }.padding(start = 28.dp, end = 28.dp, top = 24.dp)) {
             ProgressStrip(state)
             Row(Modifier.padding(top = 8.dp)) {
@@ -155,15 +155,23 @@ fun NowPlayingScreen(vm: AppViewModel) {
             Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            OptionButton(formatSpeed(state.speed), "Playback speed", Modifier.weight(1f)) { vm.player.cycleSpeed() }
-            OptionButton(if (vm.sleepMinutes == 0) "Sleep" else "${vm.sleepMinutes} min", "Sleep timer", Modifier.weight(1f)) {
-                vm.cycleSleepTimer()
+            // Icons only; speed and sleep show their value underneath once changed.
+            val speed = formatSpeed(state.speed)
+            OptionButton(Glyph.FAST, speed.takeIf { state.speed != 1f }, "Playback speed: $speed", Modifier.weight(1f)) {
+                vm.player.cycleSpeed()
             }
+            OptionButton(
+                Glyph.MOON,
+                if (vm.sleepMinutes == 0) null else "${vm.sleepMinutes}m",
+                if (vm.sleepMinutes == 0) "Sleep timer: off" else "Sleep timer: ${vm.sleepMinutes} minutes",
+                Modifier.weight(1f),
+            ) { vm.cycleSleepTimer() }
             val downloaded = videoId != null && videoId in vm.downloaded
             val downloading = videoId != null && videoId in vm.downloading
             OptionButton(
-                when { downloaded -> "On device"; downloading -> "Saving…"; else -> "Download" },
-                "Download",
+                when { downloaded -> Glyph.DOWNLOADED; downloading -> Glyph.PENDING; else -> Glyph.DOWNLOAD },
+                null,
+                when { downloaded -> "Downloaded"; downloading -> "Downloading"; else -> "Download" },
                 Modifier.weight(1f),
             ) {
                 if (videoId != null && !downloaded && !downloading) {
@@ -171,7 +179,7 @@ fun NowPlayingScreen(vm: AppViewModel) {
                 }
             }
             val isLiked = videoId != null && vm.liked[videoId] == true
-            OptionButton(if (isLiked) "Liked" else "Like", "Like", Modifier.weight(1f), bold = isLiked) {
+            OptionButton(if (isLiked) Glyph.HEART_FILLED else Glyph.HEART, null, if (isLiked) "Liked" else "Like", Modifier.weight(1f)) {
                 videoId?.let(vm::toggleLike)
             }
         }
@@ -230,17 +238,20 @@ private fun TextLink(label: String, enabled: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun OptionButton(text: String, label: String, modifier: Modifier, bold: Boolean = true, onClick: () -> Unit) {
-    Box(
+private fun OptionButton(glyph: Glyph, caption: String?, label: String, modifier: Modifier, onClick: () -> Unit) {
+    Column(
         modifier.height(52.dp)
             .border(2.dp, Ink, RoundedCornerShape(12.dp))
             .clickable(role = Role.Button, onClick = onClick)
-            .semantics { contentDescription = "$label: $text" },
-        contentAlignment = Alignment.Center,
+            .semantics(mergeDescendants = true) { contentDescription = label },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
-        TextMMD(text, fontSize = 15.sp, fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
-            textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 4.dp))
+        LineIcon(glyph, size = if (caption == null) 26.dp else 20.dp, color = Ink)
+        if (caption != null) {
+            TextMMD(caption, fontSize = 12.sp, fontWeight = FontWeight.Black, lineHeight = 13.sp,
+                textAlign = TextAlign.Center, maxLines = 1)
+        }
     }
 }
 

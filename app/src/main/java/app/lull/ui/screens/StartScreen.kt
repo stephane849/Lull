@@ -134,12 +134,24 @@ private fun PickUpCard(vm: AppViewModel, series: Series, resumeAt: Int?, player:
     }
     val single = series.collection.browseId.isEmpty()
     var confirmClear by remember(series) { mutableStateOf(false) }
+    val pickUp: () -> Unit = {
+        if (single) vm.player.play(tracks, 0, series.collection.title)
+        else vm.playFrom(series.collection, tracks, index)
+    }
 
     Column(
         Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 18.dp)
             .border(2.5.dp, Ink, RoundedCornerShape(16.dp))
-            // Hold the card to clear it.
-            .combinedClickable(onClick = {}, onLongClick = { confirmClear = true }, onLongClickLabel = "Clear Pick up")
+            // Tap the card for Now playing (picking up first if needed); hold it to clear it.
+            .combinedClickable(
+                onClick = {
+                    if (!isCurrent) pickUp()
+                    vm.go(Screen.NowPlaying)
+                },
+                onClickLabel = "Open Now playing",
+                onLongClick = { confirmClear = true },
+                onLongClickLabel = "Clear Pick up",
+            )
             .padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 16.dp),
     ) {
         TextMMD(if (isCurrent) "NOW PLAYING" else "PICK UP", fontSize = 14.sp, fontWeight = FontWeight.Bold,
@@ -185,10 +197,7 @@ private fun PickUpCard(vm: AppViewModel, series: Series, resumeAt: Int?, player:
                     PrimaryButton(if (player.isPlaying) "Pause" else "Resume", if (player.isPlaying) Glyph.PAUSE else Glyph.PLAY,
                         vm.player::toggle, Modifier.weight(1f))
                 } else {
-                    PrimaryButton("Continue", Glyph.PLAY, {
-                        if (single) vm.player.play(tracks, 0, series.collection.title)
-                        else vm.playFrom(series.collection, tracks, index)
-                    }, Modifier.weight(1f))
+                    PrimaryButton("Continue", Glyph.PLAY, pickUp, Modifier.weight(1f))
                 }
                 if (!single) SecondaryButton("All parts", null, { vm.go(Screen.Collection(series.collection)) })
             }

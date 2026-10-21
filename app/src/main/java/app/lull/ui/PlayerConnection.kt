@@ -41,8 +41,8 @@ data class PlayerUi(
 }
 
 /**
- * The screens' handle on the playback service. Position is refreshed only every 15 seconds
- * (or on tap) so the E Ink screen isn't redrawn every second.
+ * The screens' handle on the playback service. While playing, position is refreshed every
+ * second so the elapsed time ticks along.
  */
 class PlayerConnection(context: Context, scope: CoroutineScope) {
 
@@ -184,7 +184,7 @@ class PlayerConnection(context: Context, scope: CoroutineScope) {
     }
 
     private companion object {
-        const val POSITION_REFRESH_MS = 15_000L
+        const val POSITION_REFRESH_MS = 1_000L
         val SPEEDS = listOf(0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
     }
 }

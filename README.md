@@ -18,7 +18,7 @@ The queue ends when it ends.
   playback speed from 0.75× to 2×.
 - Offline downloads (YouTube Music Premium), Wi-Fi-only by default.
 - Now Playing with large controls, like, download and a sleep timer. Position updates every
-  15 seconds or on tap, to spare the E Ink screen.
+  second while playing.
 - Queue with a clear end. Radio is opt-in, from the Queue screen or in Settings.
 - Android Auto: text-only lists (Downloads, Playlists, Podcasts, Liked songs), 30 rows max, voice and
   typed search, one shared player, small buffer for phones with little RAM.
