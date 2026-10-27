@@ -62,9 +62,11 @@ import com.mudita.mmd.components.text.TextMMD
 fun NowPlayingScreen(vm: AppViewModel) {
     val state by vm.player.state.collectAsStateWithLifecycle()
 
+    // Sized to the screen: the title takes what's left and the controls never scroll away.
     ScreenFrame(
         title = "Now playing",
         onBack = { vm.back() },
+        scrollable = false,
         action = {
             TextMMD("Queue", fontSize = 18.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.clickable { vm.go(Screen.Queue) }.padding(14.dp))
@@ -72,21 +74,13 @@ fun NowPlayingScreen(vm: AppViewModel) {
         bottom = {
             if (state.hasMedia) {
                 HorizontalDividerMMD(thickness = 2.dp, color = Ink)
-                Column(Modifier.fillMaxWidth().clickable { vm.go(Screen.Queue) }.padding(horizontal = 28.dp, vertical = 16.dp)) {
-                    val next = state.upcoming.firstOrNull()
-                    TextMMD(
-                        if (next != null) "Up next: ${listOfNotNull(next.title, next.artist.ifBlank { null }).joinToString(" · ")}"
-                        else "Nothing after this",
-                        fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    )
-                    TextMMD(
-                        when (val n = state.upcoming.size) {
-                            0 -> "Playback stops when this ends"
-                            else -> "Queue ends after $n more"
-                        },
-                        fontSize = 15.sp, color = Muted,
-                    )
-                }
+                val next = state.upcoming.firstOrNull()
+                TextMMD(
+                    if (next != null) "Up next: ${listOfNotNull(next.title, next.artist.ifBlank { null }).joinToString(" · ")}"
+                    else "Nothing after this · playback stops",
+                    fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth().clickable { vm.go(Screen.Queue) }.padding(horizontal = 24.dp, vertical = 14.dp),
+                )
             }
         },
     ) {
@@ -98,22 +92,24 @@ fun NowPlayingScreen(vm: AppViewModel) {
 
         val total = state.queue.size
         val long = state.durationMs >= LONG_ITEM_MS
-        Column(Modifier.padding(start = 28.dp, end = 28.dp, top = 28.dp)) {
+        Column(Modifier.weight(1f).fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 16.dp)) {
             val where = listOfNotNull(state.source, if (total > 1) "${state.index + 1} of $total" else null).joinToString(" · ")
-            if (where.isNotEmpty()) TextMMD(where, fontSize = 16.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            TextMMD(state.title, fontSize = 32.sp, fontWeight = FontWeight.Bold, lineHeight = 38.sp, maxLines = 3,
-                overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
-            if (state.artist.isNotBlank()) TextMMD(state.artist, fontSize = 20.sp, modifier = Modifier.padding(top = 6.dp))
+            if (where.isNotEmpty()) TextMMD(where, fontSize = 15.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            TextMMD(state.title, fontSize = 26.sp, fontWeight = FontWeight.Bold, lineHeight = 31.sp, maxLines = 2,
+                overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+            if (state.artist.isNotBlank()) {
+                TextMMD(state.artist, fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+            }
         }
 
         // Position updates every second while playing, or right away when tapped.
-        Column(Modifier.fillMaxWidth().clickable { vm.player.refresh() }.padding(start = 28.dp, end = 28.dp, top = 24.dp)) {
+        Column(Modifier.fillMaxWidth().clickable { vm.player.refresh() }.padding(horizontal = 24.dp, vertical = 8.dp)) {
             ProgressStrip(state)
-            Row(Modifier.padding(top = 8.dp)) {
-                TextMMD("${formatMs(state.positionMs)} of ${formatMs(state.durationMs)}", fontSize = 17.sp)
+            Row(Modifier.padding(top = 6.dp)) {
+                TextMMD("${formatMs(state.positionMs)} of ${formatMs(state.durationMs)}", fontSize = 16.sp)
                 if (long) {
-                    TextMMD(" · ", fontSize = 17.sp)
-                    TextMMD(formatLeft((state.durationMs - state.positionMs).coerceAtLeast(0)), fontSize = 17.sp,
+                    TextMMD(" · ", fontSize = 16.sp)
+                    TextMMD(formatLeft((state.durationMs - state.positionMs).coerceAtLeast(0)), fontSize = 16.sp,
                         fontWeight = FontWeight.Bold)
                 }
             }
@@ -122,16 +118,16 @@ fun NowPlayingScreen(vm: AppViewModel) {
         if (long) {
             // Talks: seconds matter more than tracks.
             Row(
-                Modifier.fillMaxWidth().padding(top = 28.dp),
-                horizontalArrangement = Arrangement.spacedBy(28.dp, Alignment.CenterHorizontally),
+                Modifier.fillMaxWidth().padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                SkipButton(Glyph.REWIND, "15", "Back 15 seconds", { vm.player.seekBy(-15_000) })
-                PlayPauseButton(state.isPlaying, vm.player::toggle, size = 128)
-                SkipButton(Glyph.FORWARD, "30", "Forward 30 seconds", { vm.player.seekBy(30_000) })
+                SkipButton(Glyph.REWIND, "15", "Back 15 seconds", { vm.player.seekBy(-15_000) }, size = 76)
+                PlayPauseButton(state.isPlaying, vm.player::toggle, size = 104)
+                SkipButton(Glyph.FORWARD, "30", "Forward 30 seconds", { vm.player.seekBy(30_000) }, size = 76)
             }
             Row(
-                Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 TextLink("‹ Previous", enabled = true) { vm.player.previous() }
@@ -140,20 +136,21 @@ fun NowPlayingScreen(vm: AppViewModel) {
         } else {
             // Music: same shapes, but the round buttons change tracks.
             Row(
-                Modifier.fillMaxWidth().padding(top = 32.dp, bottom = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(28.dp, Alignment.CenterHorizontally),
+                Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                SkipButton(Glyph.PREVIOUS, null, "Previous", { vm.player.previous() })
-                PlayPauseButton(state.isPlaying, vm.player::toggle, size = 128)
-                SkipButton(Glyph.NEXT, null, "Next", { vm.player.next() }, enabled = state.upcoming.isNotEmpty())
+                SkipButton(Glyph.PREVIOUS, null, "Previous", { vm.player.previous() }, size = 76)
+                PlayPauseButton(state.isPlaying, vm.player::toggle, size = 104)
+                SkipButton(Glyph.NEXT, null, "Next", { vm.player.next() }, size = 76, enabled = state.upcoming.isNotEmpty())
             }
         }
 
         val videoId = state.videoId
+        val current = videoId?.let { app.lull.core.Track(it, state.title, state.artist, (state.durationMs / 1000).toInt().takeIf { s -> s > 0 }) }
         Row(
-            Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             // Icons only; speed and sleep show their value underneath once changed.
             val speed = formatSpeed(state.speed)
@@ -174,20 +171,17 @@ fun NowPlayingScreen(vm: AppViewModel) {
                 when { downloaded -> "Downloaded"; downloading -> "Downloading"; else -> "Download" },
                 Modifier.weight(1f),
             ) {
-                if (videoId != null && !downloaded && !downloading) {
-                    vm.download(app.lull.core.Track(videoId, state.title, state.artist, (state.durationMs / 1000).toInt().takeIf { it > 0 }))
-                }
+                if (current != null && !downloaded && !downloading) vm.download(current)
             }
             val isLiked = videoId != null && vm.liked[videoId] == true
             OptionButton(if (isLiked) Glyph.HEART_FILLED else Glyph.HEART, null, if (isLiked) "Liked" else "Like", Modifier.weight(1f)) {
                 videoId?.let(vm::toggleLike)
             }
-        }
-        if (videoId != null) {
-            val current = app.lull.core.Track(videoId, state.title, state.artist, (state.durationMs / 1000).toInt().takeIf { it > 0 })
-            Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.Center) {
-                if (vm.signedIn) TextLink("+ Add to playlist", enabled = true) { vm.go(Screen.AddToPlaylist(current)) }
-                TextLink("More…", enabled = true) { vm.go(Screen.TrackActions(current)) }
+            if (current != null) {
+                if (vm.signedIn) {
+                    OptionButton(Glyph.PLAYLIST_ADD, null, "Add to playlist", Modifier.weight(1f)) { vm.go(Screen.AddToPlaylist(current)) }
+                }
+                OptionButton(Glyph.MORE, null, "More", Modifier.weight(1f)) { vm.go(Screen.TrackActions(current)) }
             }
         }
     }

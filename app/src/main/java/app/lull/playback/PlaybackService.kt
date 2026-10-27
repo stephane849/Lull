@@ -49,7 +49,7 @@ import kotlinx.coroutines.withContext
  * controllers of this one session, so the car adds no second player or process.
  *
  * Car mode is deliberately lean for a phone with little RAM: a two-level, text-only browse
- * tree (Downloads, Playlists, Liked songs), at most 30 rows per folder, no artwork, and a
+ * tree (Downloads, Playlists, Liked songs), at most 30 rows per folder, no fetched artwork, and a
  * small playback buffer.
  */
 class PlaybackService : MediaLibraryService() {

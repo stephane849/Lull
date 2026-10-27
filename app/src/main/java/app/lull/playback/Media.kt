@@ -7,6 +7,7 @@ import androidx.media3.common.MediaMetadata
 import app.lull.core.MusicCollection
 import app.lull.core.Track
 import app.lull.data.ResumePositions
+import java.util.Base64
 
 /** Media ids shared by the phone screens and the Android Auto browse tree. */
 object MediaIds {
@@ -28,7 +29,14 @@ object MediaIds {
 fun playbackUri(videoId: String, quality: String? = null) =
     ("${StreamResolver.SCHEME}://video/$videoId" + (quality?.let { "?q=$it" } ?: "")).toUri()
 
-/** No artwork anywhere: the metadata carries text only, so nothing is fetched or decoded. */
+/**
+ * A 1×1 transparent PNG. No artwork is fetched, but without any Android Auto draws a
+ * blank CD in its place; this leaves the space empty so only the text shows.
+ */
+private val NO_ARTWORK: ByteArray = Base64.getDecoder()
+    .decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=")
+
+/** Text only: the artwork is [NO_ARTWORK], so nothing is fetched. */
 fun Track.toMediaItem(): MediaItem =
     MediaItem.Builder()
         .setMediaId(MediaIds.track(videoId))
@@ -38,6 +46,7 @@ fun Track.toMediaItem(): MediaItem =
             MediaMetadata.Builder()
                 .setTitle(title)
                 .setArtist(artist)
+                .setArtworkData(NO_ARTWORK, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
                 .setIsBrowsable(false)
                 .setIsPlayable(true)
                 .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)

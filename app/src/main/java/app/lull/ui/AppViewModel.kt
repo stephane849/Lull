@@ -361,8 +361,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             page.library?.let { libraryStates[browseId] = it }
             if (cont == null && page.editable) editable.add(browseId)
             page.subscription?.let { subscriptions[browseId] = it }
-            page.tracks
+            if (browseId == InnerTube.LIKED_SONGS) withoutUnliked(page.tracks) else page.tracks
         }.apply { setOrder(AppGraph.settings.isReversed(browseId)) }
+    }
+
+    /**
+     * YouTube keeps listing a song in Liked songs for a while after it's unliked, so songs
+     * unliked here stay hidden. A page that's all hidden fetches the next one.
+     */
+    private suspend fun withoutUnliked(first: Page<Track>): Page<Track> {
+        var page = first
+        while (true) {
+            val kept = page.items.filter { liked[it.videoId] != false }
+            val next = page.continuation
+            if (kept.isNotEmpty() || next == null) return Page(kept, next)
+            page = repo.collectionTracks(InnerTube.LIKED_SONGS, next)
+        }
     }
 
     // --- editing your playlists --------------------------------------------------------------
@@ -405,20 +419,30 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         editItems.add(to, moved)
         val successor = editItems.getOrNull(to + 1)?.setVideoId
         val last = editItems.getOrNull(editItems.lastIndex - 1)?.setVideoId
-        editRequest(before) { repo.movePlaylistItem(id, moved.setVideoId!!, successor, if (successor == null) last else null) }
+        editRequest({ editItems.clear(); editItems.addAll(before) }) { repo.movePlaylistItem(id, moved.setVideoId!!, successor, if (successor == null) last else null) }
     }
 
     fun removeItem(index: Int) {
         val id = editingId ?: return
         if (index !in editItems.indices) return
-        val before = editItems.toList()
         val t = editItems.removeAt(index)
+        // Put back only this item: other removals may have gone through meanwhile.
+        val undo: () -> Unit = {
+            editItems.add(index.coerceAtMost(editItems.size), t)
+            if (editingLiked) liked[t.videoId] = true
+        }
         if (editingLiked) {
             liked[t.videoId] = false
-            editRequest(before) { repo.setLiked(t.videoId, false) }
+            editRequest(undo) { repo.setLiked(t.videoId, false); loadRestIfCleared(id) }
         } else {
-            editRequest(before) { repo.removePlaylistItem(id, t.setVideoId!!, t.videoId) }
+            editRequest(undo) { repo.removePlaylistItem(id, t.setVideoId!!, t.videoId); loadRestIfCleared(id) }
         }
+    }
+
+    /** Editing holds at most the first 500 items; once those are all gone, load the rest. */
+    private fun loadRestIfCleared(id: String) {
+        val paged = collectionTracks(id)
+        if (editingId == id && editItems.isEmpty() && !paged.exhausted && !paged.loading) paged.start()
     }
 
     fun renameEditing(name: String) {
@@ -465,11 +489,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         back()
     }
 
-    private fun editRequest(before: List<Track>, call: suspend () -> Unit) {
+    private fun editRequest(undo: () -> Unit, call: suspend () -> Unit) {
         editError = null
         viewModelScope.launch {
             runCatching { call() }.onFailure {
-                editItems.clear(); editItems.addAll(before)
+                undo()
                 editError = "Couldn't save that change. It's been undone."
             }
         }
