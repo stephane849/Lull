@@ -222,7 +222,7 @@ fun <T> PagedStatus(paged: Paged<T>, empty: String) {
 const val LONG_ITEM_MS = 10 * 60_000L
 
 @Composable
-fun MiniPlayer(state: PlayerUi, onOpen: () -> Unit, onToggle: () -> Unit, onRewind: (() -> Unit)? = null) {
+fun MiniPlayer(state: PlayerUi, onOpen: () -> Unit, onToggle: () -> Unit, onRewind: (() -> Unit)? = null, onClose: (() -> Unit)? = null) {
     if (!state.hasMedia) return
     val long = state.durationMs >= LONG_ITEM_MS
     HorizontalDividerMMD(thickness = 2.dp, color = Ink)
@@ -234,27 +234,45 @@ fun MiniPlayer(state: PlayerUi, onOpen: () -> Unit, onToggle: () -> Unit, onRewi
         Column(Modifier.weight(1f).clickable(onClick = onOpen)) {
             // Middle ellipsis keeps the end of the title, where "(Part 3)" or "Ep. 12" usually is.
             TextMMD(state.title, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.MiddleEllipsis)
-            val sub = listOfNotNull(
-                state.artist.takeUnless { it.isBlank() || Titles.isCount(it) },
-                if (long) formatLeft((state.durationMs - state.positionMs).coerceAtLeast(0)) else null,
-            ).joinToString(" · ")
+            val sub = when {
+                state.error != null -> "${state.error} · tap play to retry"
+                state.isLoading -> "Loading…"
+                else -> listOfNotNull(
+                    state.artist.takeUnless { it.isBlank() || Titles.isCount(it) },
+                    if (long) formatLeft((state.durationMs - state.positionMs).coerceAtLeast(0)) else null,
+                ).joinToString(" · ")
+            }
             if (sub.isNotEmpty()) TextMMD(sub, fontSize = 14.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (long && onRewind != null) SkipButton(Glyph.REWIND, "15", "Back 15 seconds", onRewind, size = 52)
-        PlayPauseButton(state.isPlaying, onToggle, size = 60)
+        PlayPauseButton(state.isPlaying, onToggle, size = 60, loading = state.isLoading)
+        if (onClose != null) {
+            Box(
+                Modifier.size(44.dp)
+                    .clickable(role = Role.Button, onClick = onClose)
+                    .semantics { contentDescription = "Stop and close player" },
+                contentAlignment = Alignment.Center,
+            ) { LineIcon(Glyph.CLOSE, size = 20.dp) }
+        }
     }
 }
 
 /** The round, filled play/pause: the one solid shape on the screen. */
 @Composable
-fun PlayPauseButton(isPlaying: Boolean, onClick: () -> Unit, size: Int) {
+fun PlayPauseButton(isPlaying: Boolean, onClick: () -> Unit, size: Int, loading: Boolean = false) {
+    // Loading shows three still dots (no spinner, for E Ink); tapping it stops the load.
+    val glyph = when {
+        loading -> Glyph.MORE
+        isPlaying -> Glyph.PAUSE
+        else -> Glyph.PLAY
+    }
     Box(
         Modifier.size(size.dp)
             .background(Ink, CircleShape)
             .clickable(role = Role.Button, onClick = onClick)
-            .semantics { contentDescription = if (isPlaying) "Pause" else "Play" },
+            .semantics { contentDescription = if (loading) "Loading, tap to stop" else if (isPlaying) "Pause" else "Play" },
         contentAlignment = Alignment.Center,
-    ) { LineIcon(if (isPlaying) Glyph.PAUSE else Glyph.PLAY, size = (size * 0.4f).dp, color = Paper) }
+    ) { LineIcon(glyph, size = (size * 0.4f).dp, color = Paper) }
 }
 
 /** A round outlined button: arrow with seconds underneath, or just a track icon. */

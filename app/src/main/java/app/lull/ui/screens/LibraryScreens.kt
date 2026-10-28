@@ -63,7 +63,7 @@ import com.mudita.mmd.components.text.TextMMD
 @Composable
 private fun miniPlayerBar(vm: AppViewModel): @Composable () -> Unit {
     val player by vm.player.state.collectAsStateWithLifecycle()
-    return { MiniPlayer(player, { vm.go(Screen.NowPlaying) }, vm.player::toggle, { vm.player.seekBy(-15_000) }) }
+    return { MiniPlayer(player, { vm.go(Screen.NowPlaying) }, vm.player::toggle, { vm.player.seekBy(-15_000) }, vm.player::close) }
 }
 
 @Composable

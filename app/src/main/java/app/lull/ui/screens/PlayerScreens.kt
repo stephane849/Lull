@@ -106,8 +106,13 @@ fun NowPlayingScreen(vm: AppViewModel) {
         Column(Modifier.fillMaxWidth().clickable { vm.player.refresh() }.padding(horizontal = 24.dp, vertical = 8.dp)) {
             ProgressStrip(state)
             Row(Modifier.padding(top = 6.dp)) {
-                TextMMD("${formatMs(state.positionMs)} of ${formatMs(state.durationMs)}", fontSize = 16.sp)
-                if (long) {
+                val error = state.error
+                when {
+                    error != null -> TextMMD("$error · tap play to retry", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    state.isLoading -> TextMMD("Loading…", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    else -> TextMMD("${formatMs(state.positionMs)} of ${formatMs(state.durationMs)}", fontSize = 16.sp)
+                }
+                if (long && error == null && !state.isLoading) {
                     TextMMD(" · ", fontSize = 16.sp)
                     TextMMD(formatLeft((state.durationMs - state.positionMs).coerceAtLeast(0)), fontSize = 16.sp,
                         fontWeight = FontWeight.Bold)
@@ -123,7 +128,7 @@ fun NowPlayingScreen(vm: AppViewModel) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 SkipButton(Glyph.REWIND, "15", "Back 15 seconds", { vm.player.seekBy(-15_000) }, size = 76)
-                PlayPauseButton(state.isPlaying, vm.player::toggle, size = 104)
+                PlayPauseButton(state.isPlaying, vm.player::toggle, size = 104, loading = state.isLoading)
                 SkipButton(Glyph.FORWARD, "30", "Forward 30 seconds", { vm.player.seekBy(30_000) }, size = 76)
             }
             Row(
@@ -141,7 +146,7 @@ fun NowPlayingScreen(vm: AppViewModel) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 SkipButton(Glyph.PREVIOUS, null, "Previous", { vm.player.previous() }, size = 76)
-                PlayPauseButton(state.isPlaying, vm.player::toggle, size = 104)
+                PlayPauseButton(state.isPlaying, vm.player::toggle, size = 104, loading = state.isLoading)
                 SkipButton(Glyph.NEXT, null, "Next", { vm.player.next() }, size = 76, enabled = state.upcoming.isNotEmpty())
             }
         }

@@ -77,7 +77,7 @@ fun SearchScreen(vm: AppViewModel) {
     ScreenFrame(
         title = "Search",
         onBack = { vm.back() },
-        bottom = { MiniPlayer(player, { vm.go(Screen.NowPlaying) }, vm.player::toggle, { vm.player.seekBy(-15_000) }) },
+        bottom = { MiniPlayer(player, { vm.go(Screen.NowPlaying) }, vm.player::toggle, { vm.player.seekBy(-15_000) }, vm.player::close) },
     ) {
         SourceSwitch(vm.searchYouTube) { vm.setSearchSource(it) }
 
@@ -135,7 +135,7 @@ fun SearchMoreScreen(vm: AppViewModel, screen: Screen.SearchMore) {
     ScreenFrame(
         title = "${screen.title}: “${screen.query}”",
         onBack = { vm.back() },
-        bottom = { MiniPlayer(player, { vm.go(Screen.NowPlaying) }, vm.player::toggle, { vm.player.seekBy(-15_000) }) },
+        bottom = { MiniPlayer(player, { vm.go(Screen.NowPlaying) }, vm.player::toggle, { vm.player.seekBy(-15_000) }, vm.player::close) },
     ) {
         PagedStatus(paged, empty = "Nothing more.")
         paged.pageItems.forEach { ResultRow(vm, it, label = kind?.rowLabel, resumeVersion = resumeVersion) }

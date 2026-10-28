@@ -70,7 +70,7 @@ fun StartScreen(vm: AppViewModel) {
     val showCard = series != null && (resumeAt != null || cardIsPlaying)
 
     val miniBar: @Composable () -> Unit = {
-        MiniPlayer(player, { vm.go(Screen.NowPlaying) }, vm.player::toggle, { vm.player.seekBy(-15_000) })
+        MiniPlayer(player, { vm.go(Screen.NowPlaying) }, vm.player::toggle, { vm.player.seekBy(-15_000) }, vm.player::close)
     }
     ScreenFrame(
         title = null,

@@ -30,6 +30,10 @@ data class PlayerUi(
     val title: String = "",
     val artist: String = "",
     val isPlaying: Boolean = false,
+    /** Play was pressed and the stream is still being found or buffered. */
+    val isLoading: Boolean = false,
+    /** Set when the current item failed to play; play retries. */
+    val error: String? = null,
     val positionMs: Long = 0,
     val durationMs: Long = 0,
     val index: Int = 0,
@@ -83,6 +87,8 @@ class PlayerConnection(context: Context, scope: CoroutineScope) {
             title = current?.mediaMetadata?.title?.toString().orEmpty(),
             artist = current?.mediaMetadata?.artist?.toString().orEmpty().takeUnless(Titles::isCount).orEmpty(),
             isPlaying = c.isPlaying,
+            isLoading = c.playWhenReady && c.playbackState == Player.STATE_BUFFERING,
+            error = c.playerError?.let { "Couldn't play this" },
             positionMs = c.currentPosition,
             durationMs = c.duration.coerceAtLeast(0),
             index = c.currentMediaItemIndex,
@@ -133,7 +139,8 @@ class PlayerConnection(context: Context, scope: CoroutineScope) {
     fun toggle() {
         val c = controller ?: return
         when {
-            c.isPlaying -> c.pause()
+            // Also stops a track that is still loading, so the button never feels stuck.
+            c.playWhenReady && c.playbackState in listOf(Player.STATE_READY, Player.STATE_BUFFERING) -> c.pause()
             c.playbackState == Player.STATE_ENDED -> {
                 c.seekTo(c.currentMediaItemIndex, 0)
                 c.play()
@@ -153,6 +160,14 @@ class PlayerConnection(context: Context, scope: CoroutineScope) {
         if (duration != C.TIME_UNSET && duration > 0) target = target.coerceAtMost(duration - 1_000)
         c.seekTo(target)
         refresh()
+    }
+
+    /** Stops and empties the queue, which also hides the mini player. */
+    fun close() {
+        val c = controller ?: return
+        c.stop()
+        c.clearMediaItems()
+        source = null
     }
 
     fun next() = controller?.seekToNextMediaItem()
