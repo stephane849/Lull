@@ -10,6 +10,9 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -24,6 +27,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.min
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -75,6 +81,8 @@ fun StartScreen(vm: AppViewModel) {
     ScreenFrame(
         title = null,
         onBack = null,
+        // Home always fits on one screen: the index shrinks to the room the card leaves.
+        scrollable = false,
         bottom = if (cardIsPlaying) null else miniBar,
     ) {
         Row(
@@ -91,31 +99,50 @@ fun StartScreen(vm: AppViewModel) {
         }
 
         val big = !showCard
-        Column(Modifier.padding(start = 28.dp, end = 28.dp, top = if (big) 8.dp else 10.dp)) {
-            var n = 0
-            fun num() = "%02d".format(++n)
-            if (!vm.signedIn) IndexRow(num(), "Sign in", "Your music", big) { vm.go(Screen.SignIn) }
-            if (vm.signedIn) IndexRow(num(), "Podcasts", null, big) { vm.go(Screen.LibraryShelf("Podcasts", InnerTube.LIBRARY_PODCASTS)) }
-            IndexRow(num(), "Search", null, big) { vm.go(Screen.Search) }
+        val offline = vm.downloadedTracks.size
+        val rows = buildList {
+            if (!vm.signedIn) add(IndexEntry("Sign in", "Your music") { vm.go(Screen.SignIn) })
+            if (vm.signedIn) add(IndexEntry("Podcasts") { vm.go(Screen.LibraryShelf("Podcasts", InnerTube.LIBRARY_PODCASTS)) })
+            add(IndexEntry("Search") { vm.go(Screen.Search) })
             if (vm.signedIn) {
-                IndexRow(num(), "Playlists", null, big) { vm.go(Screen.LibraryShelf("Playlists", InnerTube.LIBRARY_PLAYLISTS)) }
-                IndexRow(num(), "Liked", null, big) { vm.go(Screen.Collection(vm.likedSongs())) }
+                add(IndexEntry("Playlists") { vm.go(Screen.LibraryShelf("Playlists", InnerTube.LIBRARY_PLAYLISTS)) })
+                add(IndexEntry("Liked") { vm.go(Screen.Collection(vm.likedSongs())) })
             }
-            val offline = vm.downloadedTracks.size
-            IndexRow(num(), "Offline", if (offline > 0) "$offline ${if (offline == 1) "item" else "items"}" else null, big) {
+            add(IndexEntry("Offline", if (offline > 0) "$offline ${if (offline == 1) "item" else "items"}" else null) {
                 vm.go(Screen.Downloads)
-            }
+            })
         }
 
-        Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 8.dp)) {
-            if (vm.signedIn) {
-                SmallLink("Albums") { vm.go(Screen.LibraryShelf("Albums", InnerTube.LIBRARY_ALBUMS)) }
-                SmallLink("Artists") { vm.go(Screen.LibraryShelf("Artists", InnerTube.LIBRARY_ARTISTS)) }
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            // Rows keep their full size when there's room and share what's left when there isn't.
+            val natural = if (big) 68.dp else 57.dp
+            val room = (maxHeight - TopGap - LinksHeight) / rows.size
+            val fits = room >= MinRowHeight
+            val rowHeight = if (fits) min(natural, room) else MinRowHeight
+            val labelSp = with(LocalDensity.current) { (rowHeight * 0.68f).toSp() }.value
+                .coerceAtMost(if (big) 40f else 34f)
+            // Only on very small screens or very large fonts does the index scroll.
+            Column(if (fits) Modifier else Modifier.verticalScroll(rememberScrollState())) {
+                Column(Modifier.padding(start = 28.dp, end = 28.dp, top = TopGap)) {
+                    rows.forEachIndexed { i, row -> IndexRow("%02d".format(i + 1), row, rowHeight, labelSp) }
+                }
+                Row(Modifier.height(LinksHeight).padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 8.dp)) {
+                    if (vm.signedIn) {
+                        SmallLink("Albums") { vm.go(Screen.LibraryShelf("Albums", InnerTube.LIBRARY_ALBUMS)) }
+                        SmallLink("Artists") { vm.go(Screen.LibraryShelf("Artists", InnerTube.LIBRARY_ARTISTS)) }
+                    }
+                    SmallLink("Settings") { vm.go(Screen.Settings) }
+                }
             }
-            SmallLink("Settings") { vm.go(Screen.Settings) }
         }
     }
 }
+
+private class IndexEntry(val label: String, val note: String? = null, val onClick: () -> Unit)
+
+private val TopGap = 8.dp
+private val LinksHeight = 62.dp
+private val MinRowHeight = 44.dp
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -205,18 +232,18 @@ private fun PickUpCard(vm: AppViewModel, series: Series, resumeAt: Int?, player:
     }
 }
 
+/** [height] includes the 1dp rule underneath. */
 @Composable
-private fun IndexRow(number: String, label: String, note: String?, big: Boolean, onClick: () -> Unit) {
+private fun IndexRow(number: String, entry: IndexEntry, height: Dp, labelSp: Float) {
     Row(
-        Modifier.fillMaxWidth()
-            .clickable(role = Role.Button, onClick = onClick)
-            .padding(vertical = if (big) 12.dp else 9.dp),
+        Modifier.fillMaxWidth().height(height - 1.dp)
+            .clickable(role = Role.Button, onClick = entry.onClick),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         TextMMD(number, fontSize = 15.sp, color = Muted, modifier = Modifier.width(36.dp))
-        TextMMD(label, fontSize = if (big) 40.sp else 34.sp, fontWeight = FontWeight.Black, letterSpacing = (-1).sp,
-            lineHeight = if (big) 44.sp else 38.sp, maxLines = 1, modifier = Modifier.weight(1f))
-        if (note != null) TextMMD(note, fontSize = 15.sp, color = Muted)
+        TextMMD(entry.label, fontSize = labelSp.sp, fontWeight = FontWeight.Black, letterSpacing = (-1).sp,
+            lineHeight = (labelSp * 1.1f).sp, maxLines = 1, modifier = Modifier.weight(1f))
+        if (entry.note != null) TextMMD(entry.note, fontSize = 15.sp, color = Muted)
     }
     HorizontalDividerMMD(thickness = 1.dp, color = Ink)
 }
