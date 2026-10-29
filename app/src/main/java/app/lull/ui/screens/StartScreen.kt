@@ -4,6 +4,7 @@ import app.lull.ui.components.formatLength
 import app.lull.ui.lengthSec
 import app.lull.core.CollectionKind
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -57,6 +58,7 @@ import com.mudita.mmd.components.text.TextMMD
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
+import kotlinx.coroutines.delay
 
 /**
  * Home: "Pick up" for the series you're in the middle of, then a short index of places to
@@ -161,7 +163,18 @@ private fun PickUpCard(vm: AppViewModel, series: Series, resumeAt: Int?, player:
     }
     val single = series.collection.browseId.isEmpty()
     var confirmClear by remember(series) { mutableStateOf(false) }
+    // Continue was tapped and the player hasn't caught up yet: show the dots straight away,
+    // then hand over to the player's own loading state once it holds the item.
+    var starting by remember(series) { mutableStateOf(false) }
+    LaunchedEffect(isCurrent, player.isPlaying, player.isLoading, player.error) {
+        if (isCurrent && (player.isPlaying || player.isLoading || player.error != null)) starting = false
+    }
+    LaunchedEffect(starting) {
+        if (starting) { delay(20_000); starting = false }
+    }
+    val loading = starting || (isCurrent && player.isLoading)
     val pickUp: () -> Unit = {
+        starting = true
         if (single) vm.player.play(tracks, 0, series.collection.title)
         else vm.playFrom(series.collection, tracks, index)
     }
@@ -220,7 +233,13 @@ private fun PickUpCard(vm: AppViewModel, series: Series, resumeAt: Int?, player:
             }
         } else {
             Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (isCurrent) {
+                if (loading) {
+                    // Three still dots (no spinner, for E Ink); tapping stops the load.
+                    PrimaryButton("Loading", Glyph.MORE, {
+                        starting = false
+                        vm.player.toggle()
+                    }, Modifier.weight(1f))
+                } else if (isCurrent) {
                     PrimaryButton(if (player.isPlaying) "Pause" else "Resume", if (player.isPlaying) Glyph.PAUSE else Glyph.PLAY,
                         vm.player::toggle, Modifier.weight(1f))
                 } else {
