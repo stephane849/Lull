@@ -373,6 +373,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         var page = first
         while (true) {
             val kept = page.items.filter { liked[it.videoId] != false }
+            // Whatever is listed here is liked, so the heart shows filled and a tap unlikes it.
+            kept.forEach { if (it.videoId !in liked) liked[it.videoId] = true }
             val next = page.continuation
             if (kept.isNotEmpty() || next == null) return Page(kept, next)
             page = repo.collectionTracks(InnerTube.LIKED_SONGS, next)
@@ -691,7 +693,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val now = !(liked[videoId] ?: false)
         liked[videoId] = now
         viewModelScope.launch {
-            runCatching { repo.setLiked(videoId, now) }.onFailure { liked[videoId] = !now }
+            runCatching { repo.setLiked(videoId, now) }
+                // Liked songs reloads next time it's opened, so new likes show up.
+                .onSuccess { collections.remove(InnerTube.LIKED_SONGS) }
+                .onFailure { liked[videoId] = !now }
         }
     }
 
