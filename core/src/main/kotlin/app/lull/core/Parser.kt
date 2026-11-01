@@ -30,6 +30,35 @@ object Parser {
             findAll(root, "musicTwoRowItemRenderer").mapNotNull(::collectionFromTwoRow))
             .distinctBy { it.browseId }
 
+    /** Videos on a youtube.com playlist page (Liked videos): skips deleted and private ones. */
+    fun youtubeTracks(root: JsonElement): List<Track> =
+        findAll(root, "playlistVideoRenderer").mapNotNull { r ->
+            val id = r["videoId"].str() ?: return@mapNotNull null
+            if ((r["isPlayable"] as? JsonPrimitive)?.content == "false") return@mapNotNull null
+            val title = runsText(r["title"]).trim().ifEmpty { return@mapNotNull null }
+            val channel = r["shortBylineText"].field("runs").arr()?.firstOrNull().field("text").str().orEmpty()
+            val seconds = r["lengthSeconds"].str()?.toIntOrNull() ?: parseDuration(runsText(r["lengthText"]))
+            Track(id, title, channel, seconds)
+        }.distinctBy { it.videoId }
+
+    /** Playlists in a youtube.com library page, in the old and the new ("lockup") layouts. */
+    fun youtubePlaylists(root: JsonElement): List<MusicCollection> {
+        val old = (findAll(root, "gridPlaylistRenderer") + findAll(root, "playlistRenderer")).mapNotNull { r ->
+            val id = r["playlistId"].str() ?: return@mapNotNull null
+            val title = runsText(r["title"]).trim().ifEmpty { return@mapNotNull null }
+            val by = runsText(r["shortBylineText"]).trim()
+            MusicCollection("VL$id", title, listOf("YouTube playlist", by).filter { it.isNotEmpty() }.joinToString(" · "), CollectionKind.PLAYLIST)
+        }
+        val lockups = findAll(root, "lockupViewModel").mapNotNull { r ->
+            if (r["contentType"].str() != "LOCKUP_CONTENT_TYPE_PLAYLIST") return@mapNotNull null
+            val id = r["contentId"].str() ?: return@mapNotNull null
+            val meta = path(r, "metadata", "lockupMetadataViewModel")
+            val title = path(meta, "title", "content").str()?.trim()?.ifEmpty { null } ?: return@mapNotNull null
+            MusicCollection("VL$id", title, "YouTube playlist", CollectionKind.PLAYLIST)
+        }
+        return (old + lockups).filterNot { it.browseId.startsWith("VLRD") }.distinctBy { it.browseId }
+    }
+
     fun radioTracks(root: JsonElement): List<Track> =
         findAll(root, "playlistPanelVideoRenderer").mapNotNull { r ->
             val id = r["videoId"].str() ?: return@mapNotNull null
