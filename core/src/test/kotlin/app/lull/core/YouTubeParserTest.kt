@@ -41,4 +41,25 @@ class YouTubeParserTest {
         assertEquals(listOf("VLPLold", "VLPLnew"), lists.map { it.browseId })
         assertEquals("YouTube playlist · Someone", lists[0].subtitle)
     }
+
+    @Test
+    fun playlistIgnoresSuggestions() {
+        val json = """
+        {"contents":{"twoColumnBrowseResultsRenderer":{"secondaryContents":{"sectionListRenderer":{
+          "contents":[{"musicPlaylistShelfRenderer":{"contents":[
+            {"musicResponsiveListItemRenderer":{"playlistItemData":{"videoId":"mine"},
+              "flexColumns":[{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Taj al-Arus - 22"}]}}}]}},
+            {"continuationItemRenderer":{"continuationEndpoint":{"continuationCommand":{"token":"MORE_MINE"}}}}
+          ]}},
+          {"musicShelfRenderer":{"title":{"runs":[{"text":"Suggestions"}]},"contents":[
+            {"musicResponsiveListItemRenderer":{"playlistItemData":{"videoId":"random"},
+              "flexColumns":[{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Ophelia"}]}}}]}}
+          ]}}],
+          "continuations":[{"nextContinuationData":{"continuation":"SUGGESTIONS"}}]
+        }}}}}
+        """.trimIndent()
+        val items = Parser.ownItems(Json.parseToJsonElement(json))
+        assertEquals(listOf("mine"), Parser.tracks(items).map { it.videoId })
+        assertEquals("MORE_MINE", Parser.continuation(items))
+    }
 }

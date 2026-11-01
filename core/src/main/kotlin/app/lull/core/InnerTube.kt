@@ -102,8 +102,9 @@ class InnerTube(
     fun collectionPage(browseId: String, continuation: String? = null): CollectionPage {
         if (browseId == LIKED_VIDEOS) return CollectionPage(likedVideos(continuation), null)
         val root = post("browse", browse(browseId), continuation)
+        val items = Parser.ownItems(root)
         return CollectionPage(
-            Page(Parser.tracks(root), Parser.continuation(root)),
+            Page(Parser.tracks(items), Parser.continuation(items)),
             if (continuation == null) Parser.libraryState(root) else null,
             continuation == null && browseId != LIKED_SONGS && Parser.isEditable(root),
             if (continuation == null) Parser.subscription(root) else null,
