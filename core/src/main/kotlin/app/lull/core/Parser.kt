@@ -25,6 +25,20 @@ object Parser {
             findAll(root, "musicMultiRowListItemRenderer").mapNotNull(::episodeFrom))
             .distinctBy { it.videoId }
 
+    /**
+     * The part of a playlist or album page that holds its own items. YouTube Music adds
+     * "Suggestions" and related shelves to playlist pages (and a continuation that loads more
+     * of them); those must not be read as part of the playlist.
+     */
+    fun ownItems(root: JsonElement): JsonElement {
+        val shelves = findAll(root, "musicPlaylistShelfRenderer")
+        if (shelves.isNotEmpty()) return JsonArray(shelves)
+        return without(root) { key, value ->
+            key == "musicCarouselShelfRenderer" ||
+                (key == "musicShelfRenderer" && runsText((value as? JsonObject)?.get("title")).trim().equals("Suggestions", ignoreCase = true))
+        }
+    }
+
     fun collections(root: JsonElement): List<MusicCollection> =
         (findAll(root, "musicResponsiveListItemRenderer").mapNotNull(::collectionFromList) +
             findAll(root, "musicTwoRowItemRenderer").mapNotNull(::collectionFromTwoRow))
@@ -234,6 +248,12 @@ object Parser {
         }
         walk(root)
         return out
+    }
+
+    private fun without(e: JsonElement, drop: (String, JsonElement) -> Boolean): JsonElement = when (e) {
+        is JsonObject -> JsonObject(e.filter { (k, v) -> !drop(k, v) }.mapValues { (_, v) -> without(v, drop) })
+        is JsonArray -> JsonArray(e.map { without(it, drop) })
+        else -> e
     }
 
     private fun path(e: JsonElement?, vararg keys: Any): JsonElement? =
