@@ -37,6 +37,13 @@ class InnerTube(
         const val CLIENT_VERSION = "1.20251006.03.00"
 
         const val LIKED_SONGS = "VLLM"
+        /** Videos liked on YouTube (any kind, not just music). Read from youtube.com. */
+        const val LIKED_VIDEOS = "VLLL"
+        private const val YT_ORIGIN = "https://www.youtube.com"
+        /** youtube.com web client version, for liked videos and saved YouTube playlists. */
+        const val YT_CLIENT_VERSION = "2.20251006.01.00"
+        /** Continuations from youtube.com carry this prefix so the next page goes there too. */
+        private const val YT_PREFIX = "yt:"
         const val LIBRARY_PLAYLISTS = "FEmusic_liked_playlists"
         const val LIBRARY_ALBUMS = "FEmusic_liked_albums"
         const val LIBRARY_ARTISTS = "FEmusic_library_corpus_track_artists"
@@ -68,7 +75,23 @@ class InnerTube(
     /** Library shelves: [LIBRARY_PLAYLISTS], [LIBRARY_ALBUMS], [LIBRARY_ARTISTS] or [LIBRARY_PODCASTS]. */
     fun libraryCollections(browseId: String, continuation: String? = null): Page<MusicCollection> {
         val root = post("browse", browse(browseId), continuation)
-        return Page(Parser.collections(root), Parser.continuation(root))
+        val items = Parser.collections(root)
+        if (browseId != LIBRARY_PLAYLISTS || continuation != null) return Page(items, Parser.continuation(root))
+        // Liked videos leads, then any playlists saved on YouTube that YouTube Music leaves out.
+        val have = items.map { it.browseId.removePrefix("VL") }.toSet()
+        val fromYouTube = runCatching { youtubePlaylists() }.getOrDefault(emptyList())
+            .filter { it.browseId.removePrefix("VL") !in have }
+        val liked = MusicCollection(LIKED_VIDEOS, "Liked videos", "Videos you liked on YouTube", CollectionKind.PLAYLIST)
+        return Page((listOf(liked) + items + fromYouTube).distinctBy { it.browseId }, Parser.continuation(root))
+    }
+
+    /** Every playlist in your YouTube library (yours and saved), from youtube.com. */
+    private fun youtubePlaylists(): List<MusicCollection> {
+        if (!isSignedIn) return emptyList()
+        val root = post("browse", browse("FEplaylist_aggregation"), null, youtube = true)
+        return Parser.youtubePlaylists(root)
+            // Liked videos has its own entry; Watch later can't be opened as a playlist here.
+            .filterNot { it.browseId == LIKED_VIDEOS || it.browseId == "VLWL" }
     }
 
     /** Songs or episodes inside a playlist, album, artist or podcast page, or [LIKED_SONGS]. */
@@ -77,6 +100,7 @@ class InnerTube(
 
     /** Like [collectionTracks], plus the page's library state on the first page. */
     fun collectionPage(browseId: String, continuation: String? = null): CollectionPage {
+        if (browseId == LIKED_VIDEOS) return CollectionPage(likedVideos(continuation), null)
         val root = post("browse", browse(browseId), continuation)
         return CollectionPage(
             Page(Parser.tracks(root), Parser.continuation(root)),
@@ -84,6 +108,26 @@ class InnerTube(
             continuation == null && browseId != LIKED_SONGS && Parser.isEditable(root),
             if (continuation == null) Parser.subscription(root) else null,
         )
+    }
+
+    /**
+     * Liked videos, from youtube.com where the list is complete. If that fails or comes back
+     * empty, YouTube Music's view of the same list is tried.
+     */
+    private fun likedVideos(continuation: String?): Page<Track> {
+        if (continuation != null && !continuation.startsWith(YT_PREFIX)) {
+            val root = post("browse", browse(LIKED_VIDEOS), continuation)
+            return Page(Parser.tracks(root), Parser.continuation(root))
+        }
+        val fromYouTube = runCatching {
+            val root = post("browse", browse(LIKED_VIDEOS), continuation?.removePrefix(YT_PREFIX), youtube = true)
+            Page(Parser.youtubeTracks(root), Parser.continuation(root)?.let { YT_PREFIX + it })
+        }
+        val page = fromYouTube.getOrNull()
+        if (page != null && (page.items.isNotEmpty() || continuation != null)) return page
+        val root = runCatching { post("browse", browse(LIKED_VIDEOS), null) }
+            .getOrElse { e -> throw fromYouTube.exceptionOrNull() ?: e }
+        return Page(Parser.tracks(root), Parser.continuation(root))
     }
 
     /** Save an album, podcast or playlist to your library, or remove it. */
@@ -204,12 +248,14 @@ class InnerTube(
 
     private fun browse(browseId: String) = mapOf("browseId" to JsonPrimitive(browseId))
 
-    private fun post(endpoint: String, fields: Map<String, JsonElement>, continuation: String?): JsonElement {
+    private fun post(endpoint: String, fields: Map<String, JsonElement>, continuation: String?, youtube: Boolean = false): JsonElement {
+        val origin = if (youtube) YT_ORIGIN else ORIGIN
+        val version = if (youtube) YT_CLIENT_VERSION else CLIENT_VERSION
         val body: JsonObject = buildJsonObject {
             putJsonObject("context") {
                 putJsonObject("client") {
-                    put("clientName", "WEB_REMIX")
-                    put("clientVersion", CLIENT_VERSION)
+                    put("clientName", if (youtube) "WEB" else "WEB_REMIX")
+                    put("clientVersion", version)
                     put("hl", "en")
                 }
                 putJsonObject("user") {}
@@ -218,10 +264,10 @@ class InnerTube(
             else put("continuation", continuation)
         }
 
-        val url = "$ORIGIN/youtubei/v1/$endpoint".toHttpUrl().newBuilder()
+        val url = "$origin/youtubei/v1/$endpoint".toHttpUrl().newBuilder()
             .addQueryParameter("prettyPrint", "false")
             .apply {
-                if (continuation != null) {
+                if (continuation != null && !youtube) {
                     addQueryParameter("ctoken", continuation)
                     addQueryParameter("continuation", continuation)
                     addQueryParameter("type", "next")
@@ -233,23 +279,23 @@ class InnerTube(
             .url(url)
             .post(body.toString().toRequestBody(JSON_TYPE))
             .header("User-Agent", USER_AGENT)
-            .header("Origin", ORIGIN)
-            .header("Referer", "$ORIGIN/")
-            .header("X-Origin", ORIGIN)
+            .header("Origin", origin)
+            .header("Referer", "$origin/")
+            .header("X-Origin", origin)
             .header("X-Goog-AuthUser", "0")
-            .header("X-Youtube-Client-Name", "67")
-            .header("X-Youtube-Client-Version", CLIENT_VERSION)
+            .header("X-Youtube-Client-Name", if (youtube) "1" else "67")
+            .header("X-Youtube-Client-Version", version)
             .apply {
                 credentials()?.let { creds ->
                     header("Cookie", creds.cookie)
-                    creds.authorization(ORIGIN)?.let { header("Authorization", it) }
+                    creds.authorization(origin)?.let { header("Authorization", it) }
                 }
             }
             .build()
 
         http.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw InnerTubeException(response.code, "YouTube Music returned ${response.code}")
+                throw InnerTubeException(response.code, "${if (youtube) "YouTube" else "YouTube Music"} returned ${response.code}")
             }
             val text = response.body?.string() ?: throw InnerTubeException(response.code, "Empty response")
             return Json.parseToJsonElement(text)
