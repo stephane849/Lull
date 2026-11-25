@@ -59,7 +59,7 @@ YouTube changes things without notice. The fragile pieces are isolated:
 
 | Symptom | Where to look |
 | --- | --- |
-| Songs won't play | Bump `NewPipeExtractor` in `app/build.gradle.kts` (it deciphers stream URLs) |
+| Songs won't play | `playback/web/`: tokens and the YouTube Music player request; update `assets/ejs/` from [yt-dlp-ejs](https://github.com/yt-dlp/ejs) if challenges stop solving. The fallback is `NewPipeExtractor` in `app/build.gradle.kts` |
 | Requests fail with HTTP 400 | `CLIENT_VERSION` in `core/.../InnerTube.kt` |
 | Search stops filtering | `SearchFilter` params in `core/.../Models.kt` |
 | Lists come back empty | `Parser.kt` renderer names |

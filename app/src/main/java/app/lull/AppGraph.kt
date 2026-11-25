@@ -21,6 +21,8 @@ import app.lull.data.SavedLocally
 import app.lull.data.Settings
 import app.lull.playback.NewPipeDownloader
 import app.lull.playback.StreamResolver
+import app.lull.playback.web.WebEngine
+import app.lull.playback.web.WebMusicStreams
 import kotlinx.coroutines.flow.MutableStateFlow
 import okhttp3.OkHttpClient
 import org.schabi.newpipe.extractor.NewPipe
@@ -57,7 +59,7 @@ object AppGraph {
         recentSeries = RecentSeries(context)
         savedLocally = SavedLocally(context)
         repo = Repository(InnerTube(http) { credentials.cookie()?.let(::Credentials) })
-        resolver = StreamResolver(context, settings)
+        resolver = StreamResolver(context, settings, WebMusicStreams(http, WebEngine(context)))
 
         val database = StandaloneDatabaseProvider(context)
         downloadCache = SimpleCache(File(context.filesDir, "downloads"), NoOpCacheEvictor(), database)
