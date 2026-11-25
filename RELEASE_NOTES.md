@@ -1,11 +1,14 @@
 A calm, text-only YouTube Music client for E Ink phones, built for the Mudita Kompakt.
 
-**Install:** download `Lull-v1.0.7.apk` below and open it on your phone; it installs over earlier versions. Or add `https://github.com/stephane849/Lull` in Obtainium.
+**Install:** download `Lull-v1.0.8.apk` below and open it on your phone; it installs over earlier versions. Or add `https://github.com/stephane849/Lull` in Obtainium.
 
-### What's new in 1.0.7
+### What's new in 1.0.8
+- **Songs play again:** many songs stopped loading ("Couldn't play this") after YouTube changed how it serves audio. Lull now uses the updated stream lookup.
+
+### Also recent (1.0.7)
 - **Playlists fixed:** your own playlists no longer fill up with YouTube Music's suggested songs.
 
-### Also recent (1.0.6)
+### Earlier (1.0.6)
 - **Liked videos:** videos you liked on YouTube (not just music) are at the top of Playlists.
 - **YouTube playlists:** playlists you saved on YouTube now show up in Playlists too.
 
