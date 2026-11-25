@@ -14,8 +14,8 @@ android {
         applicationId = "app.lull"
         minSdk = 26
         targetSdk = 36
-        versionCode = 110
-        versionName = "1.0.10"
+        versionCode = 111
+        versionName = "1.0.11"
     }
 
     // Releases are signed in CI with the key from the LULL_KEYSTORE_B64 / LULL_KEYSTORE_PASSWORD
