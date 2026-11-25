@@ -1,5 +1,6 @@
 package app.lull.ui
 
+import app.lull.AppGraph
 import app.lull.core.Titles
 import android.content.ComponentName
 import android.content.Context
@@ -98,7 +99,10 @@ class PlayerConnection(context: Context, scope: CoroutineScope) {
             artist = current?.mediaMetadata?.artist?.toString().orEmpty().takeUnless(Titles::isCount).orEmpty(),
             isPlaying = c.isPlaying,
             isLoading = c.playWhenReady && c.playbackState == Player.STATE_BUFFERING,
-            error = c.playerError?.let { "Couldn't play this (${reason(it)})" },
+            error = c.playerError?.let { e ->
+                val detail = current?.let { MediaIds.videoIdOf(it.mediaId) }?.let(AppGraph.resolver::problemFor)
+                "Couldn't play this (${detail ?: reason(e)})"
+            },
             positionMs = c.currentPosition,
             durationMs = c.duration.coerceAtLeast(0),
             index = c.currentMediaItemIndex,

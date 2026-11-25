@@ -33,6 +33,10 @@ class StreamResolver(
 
     private val connectivity = context.getSystemService(ConnectivityManager::class.java)
     @Volatile private var webFailedAt = 0L
+    private val problems = ConcurrentHashMap<String, String>()
+
+    /** Why the last lookup for [videoId] failed, in a few words per method; null if it didn't. */
+    fun problemFor(videoId: String): String? = problems[videoId]
     private val cache = ConcurrentHashMap<String, Resolved>() // key includes "web" so older picks aren't reused
 
     override fun resolveDataSpec(dataSpec: DataSpec): DataSpec {
@@ -67,10 +71,12 @@ class StreamResolver(
                 // Cached only briefly, so the web path gets another go soon.
                 Resolved(newPipeUrl(videoId, high), emptyMap(), System.currentTimeMillis() + WEB_BACKOFF_MS)
             } catch (e: IOException) {
+                problems[videoId] = "web: ${brief(webError)} / old: ${brief(e)}"
                 e.addSuppressed(webError)
                 throw e
             }
         }
+        problems.remove(videoId)
         val expires = if (resolved.expires > 0) resolved.expires else System.currentTimeMillis() + URL_TTL_MS
         return Resolved(resolved.url, resolved.headers, expires).also { cache[key] = it }
     }
@@ -108,6 +114,19 @@ class StreamResolver(
                 ?: streams.minBy { it.averageBitrate }
         }
         return chosen.content
+    }
+
+    /** The most specific message in [e]'s cause chain, shortened for the Now playing screen. */
+    private fun brief(e: Throwable): String {
+        var deepest: Throwable = e
+        var t: Throwable? = e
+        while (t != null) {
+            if (!t.message.isNullOrBlank() && !t.message!!.startsWith("Couldn't load song")) deepest = t
+            t = t.cause
+        }
+        val text = deepest.message?.lineSequence()?.firstOrNull()?.trim().orEmpty()
+            .ifEmpty { deepest.javaClass.simpleName }
+        return if (text.length > 90) text.take(90) + "…" else text
     }
 
     companion object {
