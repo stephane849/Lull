@@ -32,6 +32,7 @@ class StreamResolver(
     private class Resolved(val url: String, val headers: Map<String, String>, val expires: Long)
 
     private val connectivity = context.getSystemService(ConnectivityManager::class.java)
+    @Volatile private var webFailedAt = 0L
     private val cache = ConcurrentHashMap<String, Resolved>() // key includes "web" so older picks aren't reused
 
     override fun resolveDataSpec(dataSpec: DataSpec): DataSpec {
@@ -56,18 +57,22 @@ class StreamResolver(
         cache[key]?.let { if (System.currentTimeMillis() < it.expires) return it }
 
         val resolved = try {
+            // ExoPlayer retries failed loads; don't redo a slow failure on every retry.
+            if (System.currentTimeMillis() - webFailedAt < WEB_BACKOFF_MS) throw IOException("Web path failed moments ago")
             webStream(videoId, high)
         } catch (webError: Exception) {
+            if (webError.message != "Web path failed moments ago") webFailedAt = System.currentTimeMillis()
             Log.w(TAG, "YouTube Music web path failed for $videoId, trying NewPipe", webError)
             try {
-                Resolved(newPipeUrl(videoId, high), emptyMap(), 0)
+                // Cached only briefly, so the web path gets another go soon.
+                Resolved(newPipeUrl(videoId, high), emptyMap(), System.currentTimeMillis() + WEB_BACKOFF_MS)
             } catch (e: IOException) {
                 e.addSuppressed(webError)
                 throw e
             }
         }
-        return Resolved(resolved.url, resolved.headers, System.currentTimeMillis() + URL_TTL_MS)
-            .also { cache[key] = it }
+        val expires = if (resolved.expires > 0) resolved.expires else System.currentTimeMillis() + URL_TTL_MS
+        return Resolved(resolved.url, resolved.headers, expires).also { cache[key] = it }
     }
 
     /** One retry with a fresh WebView and session: tokens or the page state may have gone stale. */
@@ -108,6 +113,7 @@ class StreamResolver(
     companion object {
         const val SCHEME = "lull"
         private const val TAG = "LullStreams"
+        private const val WEB_BACKOFF_MS = 60_000L
         private const val NORMAL_MAX_KBPS = 140
         private const val URL_TTL_MS = 4 * 60 * 60 * 1000L
     }

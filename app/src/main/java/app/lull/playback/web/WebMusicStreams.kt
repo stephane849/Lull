@@ -43,6 +43,12 @@ class WebMusicStreams(private val http: OkHttpClient, private val engine: WebEng
 
     @Synchronized
     fun audio(videoId: String, high: Boolean): Stream {
+        if (engine.stateLost) {
+            // A new page has none of the old tokens or the prepared player.
+            engine.stateLost = false
+            session = null
+            player = null
+        }
         val s = session()
         val p = player()
         val playerPot = mint(videoId)
@@ -173,7 +179,7 @@ class WebMusicStreams(private val http: OkHttpClient, private val engine: WebEng
             engine.eval(
                 "(function () { var r = jsc({type: 'player', player: Lull.player(), output_preprocessed: true, requests: []});" +
                     " window.lullPlayer = r.preprocessed_player; return 'ok'; })()",
-                timeoutSeconds = 60,
+                timeoutSeconds = 30,
             )
         } finally {
             engine.releasePlayer()

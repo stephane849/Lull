@@ -6,6 +6,7 @@ import android.content.Context
 import android.os.Bundle
 import androidx.core.os.bundleOf
 import androidx.media3.common.C
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionCommand
@@ -78,6 +79,15 @@ class PlayerConnection(context: Context, scope: CoroutineScope) {
         }
     }
 
+    /** A few words on what failed, so a screenshot says which step broke. */
+    private fun reason(e: PlaybackException): String = when (e.errorCode) {
+        PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> "YouTube refused the audio"
+        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "no connection"
+        PlaybackException.ERROR_CODE_IO_UNSPECIFIED -> "no audio link"
+        else -> e.errorCodeName.removePrefix("ERROR_CODE_").lowercase().replace('_', ' ')
+    }
+
     fun refresh() {
         val c = controller ?: return
         val current = c.currentMediaItem
@@ -88,7 +98,7 @@ class PlayerConnection(context: Context, scope: CoroutineScope) {
             artist = current?.mediaMetadata?.artist?.toString().orEmpty().takeUnless(Titles::isCount).orEmpty(),
             isPlaying = c.isPlaying,
             isLoading = c.playWhenReady && c.playbackState == Player.STATE_BUFFERING,
-            error = c.playerError?.let { "Couldn't play this" },
+            error = c.playerError?.let { "Couldn't play this (${reason(it)})" },
             positionMs = c.currentPosition,
             durationMs = c.duration.coerceAtLeast(0),
             index = c.currentMediaItemIndex,

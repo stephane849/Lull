@@ -8,6 +8,7 @@ import android.util.Log
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.RenderProcessGoneDetail
+import android.webkit.WebResourceRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -42,7 +43,7 @@ class WebEngine(private val context: Context) {
     @Volatile private var playerSource: String? = null
 
     /** Evaluates [expression] (a value or a Promise) and returns it as a string (objects as JSON). */
-    fun eval(expression: String, timeoutSeconds: Long = 30): String {
+    fun eval(expression: String, timeoutSeconds: Long = 15): String {
         check(Looper.myLooper() != Looper.getMainLooper()) { "WebEngine called on the main thread" }
         ensureReady()
         val id = ids.incrementAndGet().toString()
@@ -59,7 +60,11 @@ class WebEngine(private val context: Context) {
             })();
         """.trimIndent()
         main.post { webView?.evaluateJavascript(script, null) ?: result.completeExceptionally(IOException("WebView is gone")) }
-        return await(result, timeoutSeconds).also { pending.remove(id) }
+        try {
+            return await(result, timeoutSeconds)
+        } finally {
+            pending.remove(id)
+        }
     }
 
     /** Makes [source] available to JavaScript as `Lull.player()` for the next [eval]. */
@@ -91,14 +96,14 @@ class WebEngine(private val context: Context) {
     private fun ensureReady() {
         val current = ready
         if (current != null && !current.isCompletedExceptionally) {
-            await(current, 30)
+            await(current, 20)
             return
         }
         val starting = CompletableFuture<Unit>()
         ready = starting
         main.post { create(starting) }
         try {
-            await(starting, 30)
+            await(starting, 20)
         } catch (e: IOException) {
             ready = null
             throw e
@@ -129,15 +134,15 @@ class WebEngine(private val context: Context) {
                 }
             }
             view.webViewClient = object : WebViewClient() {
+                // The page must never navigate: that would drop the tokens and the solver.
+                override fun shouldOverrideUrlLoading(v: WebView, request: WebResourceRequest): Boolean = true
+
+                override fun onPageStarted(v: WebView, url: String?, favicon: android.graphics.Bitmap?) {
+                    if (done.isDone && webView === v) lost(v, "page navigated to $url")
+                }
                 // Without this the whole app would crash if Android kills the WebView's renderer.
                 override fun onRenderProcessGone(v: WebView, detail: RenderProcessGoneDetail): Boolean {
-                    Log.w(TAG, "WebView renderer gone (crashed=${detail.didCrash()})")
-                    if (webView === v) {
-                        webView = null
-                        ready = null
-                        pending.values.forEach { it.completeExceptionally(IOException("WebView renderer gone")) }
-                        pending.clear()
-                    }
+                    if (webView === v) lost(v, "renderer gone (crashed=${detail.didCrash()})")
                     v.destroy()
                     return true
                 }
@@ -146,7 +151,7 @@ class WebEngine(private val context: Context) {
                     if (done.isDone) return
                     // yt-dlp's solver: lib defines `lib` (meriyah + astring), core defines `jsc`.
                     v.evaluateJavascript(solver[0] + "\n;var meriyah = lib.meriyah, astring = lib.astring;\n") {
-                        v.evaluateJavascript(solver[1] + "\n;typeof jsc") { type ->
+                        v.evaluateJavascript(browserSafe(solver[1]) + "\n;typeof jsc") { type ->
                             if (type == "\"function\"") done.complete(Unit)
                             else done.completeExceptionally(IOException("Solver didn't load ($type)"))
                         }
@@ -160,6 +165,21 @@ class WebEngine(private val context: Context) {
             done.completeExceptionally(IOException("WebView unavailable: ${t.message}", t))
         }
     }
+
+    /** The page's state is gone: fail what's waiting now (not after a timeout) and start fresh next time. */
+    private fun lost(v: WebView, why: String) {
+        Log.w(TAG, "WebView lost: $why")
+        if (webView !== v) return
+        webView = null
+        ready = null
+        val error = IOException("WebView lost: $why")
+        pending.values.forEach { it.completeExceptionally(error) }
+        pending.clear()
+        stateLost = true
+    }
+
+    /** True once after the page state was lost, so callers know their tokens are gone too. */
+    @Volatile var stateLost = false
 
     private inner class Bridge {
         @JavascriptInterface
@@ -187,6 +207,19 @@ class WebEngine(private val context: Context) {
         /** The same desktop Chrome identity is used for BotGuard and for the stream requests. */
         const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.3"
+
+        private const val LOCATION_ASSIGNMENT =
+            "globalThis.location = new URL(\"https://www.youtube.com/watch?v=yt-dlp-wins\");"
+
+        /**
+         * yt-dlp's solver is made for Node/Deno, where it sets `location` to a watch page. In a
+         * browser that assignment navigates the page away and wipes everything, so drop it: the
+         * page's own location is already https://www.youtube.com/.
+         */
+        fun browserSafe(core: String): String {
+            if (!core.contains(LOCATION_ASSIGNMENT)) Log.w(TAG, "Solver changed: location assignment not found")
+            return core.replace(LOCATION_ASSIGNMENT, "void 0;")
+        }
 
         /** Quotes [s] as a JavaScript string literal. */
         fun js(s: String): String = JSONObject.quote(s)
