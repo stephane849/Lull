@@ -107,9 +107,29 @@ class WebMusicStreams(
             plain.filter { kbps(it) in 1..NORMAL_MAX_KBPS }.maxByOrNull(::kbps) ?: plain.minBy(::kbps)
         }
 
-        val pot = if (binding == s.visitorData) s.streamingPot else streamingPots.getOrPut(binding) { mint(binding) }
-        val url = solve(chosen) + "&pot=" + Uri.encode(pot)
-        return Stream(url, mapOf("User-Agent" to WebEngine.USER_AGENT, "Origin" to MUSIC, "Referer" to "$MUSIC/"))
+        val base = solve(chosen)
+        val headers = mapOf("User-Agent" to WebEngine.USER_AGENT, "Origin" to MUSIC, "Referer" to "$MUSIC/")
+
+        // Check the link before the player gets it. Signed in, the streaming token should be bound
+        // to the account session (with or without its "||" suffix); the visitor id is the last try.
+        val bindings = listOf(binding, binding.substringBefore("||"), s.visitorData).filter { it.isNotEmpty() }.distinct()
+        val refused = mutableListOf<String>()
+        for (b in bindings) {
+            val pot = if (b == s.visitorData) s.streamingPot else streamingPots.getOrPut(b) { mint(b) }
+            val url = "$base&pot=${Uri.encode(pot)}"
+            val code = probe(url, headers)
+            if (code in 200..299) return Stream(url, headers)
+            refused += code.toString()
+        }
+        throw IOException("YouTube refused the audio (HTTP ${refused.joinToString("/")})")
+    }
+
+    /** The HTTP status for the first two bytes of [url]. */
+    private fun probe(url: String, headers: Map<String, String>): Int {
+        val request = Request.Builder().url(url).header("Range", "bytes=0-1")
+            .apply { headers.forEach { (k, v) -> header(k, v) } }
+            .build()
+        http.newCall(request).execute().use { return it.code }
     }
 
     private fun playable(r: JSONObject) = r.optJSONObject("playabilityStatus")?.optString("status") == "OK"
@@ -229,11 +249,15 @@ class WebMusicStreams(
 
     /** The format's URL with its `sig` and `n` challenges solved. */
     private fun solve(format: JSONObject): String {
-        val cipher = format.optString("signatureCipher").takeIf { it.isNotEmpty() }?.let { Uri.parse("?$it") }
-        val base = format.optString("url").ifEmpty { cipher?.getQueryParameter("url") ?: throw IOException("No stream URL") }
-        val sig = cipher?.getQueryParameter("s")
-        val sigParam = cipher?.getQueryParameter("sp") ?: "signature"
-        val n = Uri.parse(base).getQueryParameter("n")
+        // Parsed by hand: android.net.Uri treats a stray '#' or ':' as URL structure and drops the rest.
+        val cipher = format.optString("signatureCipher").takeIf { it.isNotEmpty() }?.let(::queryParams)
+        val base = format.optString("url").ifEmpty { cipher?.get("url").orEmpty() }
+        if (base.isEmpty()) {
+            throw IOException("No stream URL (format has: ${format.keys().asSequence().joinToString(",")})")
+        }
+        val sig = cipher?.get("s")
+        val sigParam = cipher?.get("sp") ?: "signature"
+        val n = Regex("""[?&]n=([^&]*)""").find(base)?.groupValues?.get(1)?.let { URLDecoder.decode(it, "UTF-8") }
 
         val requests = JSONArray()
         if (sig != null) requests.put(JSONObject().put("type", "sig").put("challenges", JSONArray().put(sig)))
@@ -312,6 +336,12 @@ class WebMusicStreams(
             return r.body?.string().orEmpty()
         }
     }
+
+    /** `a=1&b=x%3Dy` as a map, values decoded. */
+    private fun queryParams(query: String): Map<String, String> = query.split('&').mapNotNull { part ->
+        val eq = part.indexOf('=')
+        if (eq <= 0) null else part.substring(0, eq) to URLDecoder.decode(part.substring(eq + 1), "UTF-8")
+    }.toMap()
 
     private fun decodeBase64(s: String): ByteArray =
         Base64.decode(s.replace('-', '+').replace('_', '/').replace('.', '='), Base64.DEFAULT)
