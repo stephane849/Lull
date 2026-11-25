@@ -32,7 +32,10 @@ class StreamResolver(
     private class Resolved(val url: String, val headers: Map<String, String>, val expires: Long)
 
     private val connectivity = context.getSystemService(ConnectivityManager::class.java)
-    @Volatile private var webFailedAt = 0L
+    /** When the web path last failed for a song, and why (the real reason, kept for the screen). */
+    private val webFailures = ConcurrentHashMap<String, Pair<Long, String>>()
+
+    private class RecentWebFailure(why: String) : IOException(why)
     private val problems = ConcurrentHashMap<String, String>()
 
     /** Why the last lookup for [videoId] failed, in a few words per method; null if it didn't. */
@@ -61,11 +64,13 @@ class StreamResolver(
         cache[key]?.let { if (System.currentTimeMillis() < it.expires) return it }
 
         val resolved = try {
-            // ExoPlayer retries failed loads; don't redo a slow failure on every retry.
-            if (System.currentTimeMillis() - webFailedAt < WEB_BACKOFF_MS) throw IOException("Web path failed moments ago")
+            // ExoPlayer retries a failed load; don't redo a slow failure for the same song every time.
+            webFailures[videoId]?.let { (at, why) ->
+                if (System.currentTimeMillis() - at < WEB_BACKOFF_MS) throw RecentWebFailure(why)
+            }
             webStream(videoId, high)
         } catch (webError: Exception) {
-            if (webError.message != "Web path failed moments ago") webFailedAt = System.currentTimeMillis()
+            if (webError !is RecentWebFailure) webFailures[videoId] = System.currentTimeMillis() to brief(webError)
             Log.w(TAG, "YouTube Music web path failed for $videoId, trying NewPipe", webError)
             try {
                 // Cached only briefly, so the web path gets another go soon.
@@ -77,6 +82,7 @@ class StreamResolver(
             }
         }
         problems.remove(videoId)
+        webFailures.remove(videoId)
         val expires = if (resolved.expires > 0) resolved.expires else System.currentTimeMillis() + URL_TTL_MS
         return Resolved(resolved.url, resolved.headers, expires).also { cache[key] = it }
     }
@@ -85,6 +91,8 @@ class StreamResolver(
     private fun webStream(videoId: String, high: Boolean): Resolved {
         val stream = try {
             web.audio(videoId, high)
+        } catch (unplayable: WebMusicStreams.Unplayable) {
+            throw unplayable
         } catch (first: Exception) {
             Log.w(TAG, "Web path failed for $videoId, retrying with a fresh session", first)
             web.invalidate()
@@ -126,7 +134,7 @@ class StreamResolver(
         }
         val text = deepest.message?.lineSequence()?.firstOrNull()?.trim().orEmpty()
             .ifEmpty { deepest.javaClass.simpleName }
-        return if (text.length > 90) text.take(90) + "…" else text
+        return if (text.length > 120) text.take(120) + "…" else text
     }
 
     companion object {

@@ -2,6 +2,7 @@ package app.lull.playback.web
 
 import android.net.Uri
 import android.util.Base64
+import app.lull.core.Credentials
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -16,12 +17,22 @@ import java.net.URLDecoder
  * Finds audio the way YouTube Music's own web player does, for videos where YouTube refuses the
  * links NewPipe Extractor gets (HTTP 403 without a proof-of-origin token):
  *
- * 1. a logged-out visitor session and BotGuard tokens for it ([WebEngine], once per ~12 hours);
- * 2. a WEB_REMIX player request carrying the video's token;
+ * 1. a visitor session and BotGuard tokens for it ([WebEngine], once per ~12 hours);
+ * 2. a WEB_REMIX player request carrying the video's token, signed in with the user's own
+ *    session when there is one (album tracks are often unavailable to anonymous requests),
+ *    otherwise, or if that fails, anonymous;
  * 3. the stream URL's `sig` / `n` challenges solved against YouTube's current player script;
- * 4. the session's streaming token appended as `pot`.
+ * 4. a streaming token appended as `pot`: bound to the account's data-sync id when signed in,
+ *    to the visitor id otherwise.
  */
-class WebMusicStreams(private val http: OkHttpClient, private val engine: WebEngine) {
+class WebMusicStreams(
+    private val http: OkHttpClient,
+    private val engine: WebEngine,
+    private val credentials: () -> Credentials?,
+) {
+
+    /** YouTube Music answered but won't play this song; a fresh session wouldn't change that. */
+    class Unplayable(message: String) : IOException(message)
 
     /** An audio URL plus the headers it must be fetched with. */
     class Stream(val url: String, val headers: Map<String, String>)
@@ -30,6 +41,8 @@ class WebMusicStreams(private val http: OkHttpClient, private val engine: WebEng
     private class Player(val id: String, val signatureTimestamp: Int)
 
     private var session: Session? = null
+    /** Streaming tokens by what they're bound to (visitor id or data-sync id), for this session. */
+    private val streamingPots = HashMap<String, String>()
     private var player: Player? = null
     private var playerCheckedAt = 0L
 
@@ -37,6 +50,7 @@ class WebMusicStreams(private val http: OkHttpClient, private val engine: WebEng
     @Synchronized
     fun invalidate() {
         session = null
+        streamingPots.clear()
         player = null
         engine.reset()
     }
@@ -47,17 +61,35 @@ class WebMusicStreams(private val http: OkHttpClient, private val engine: WebEng
             // A new page has none of the old tokens or the prepared player.
             engine.stateLost = false
             session = null
+            streamingPots.clear()
             player = null
         }
         val s = session()
         val p = player()
         val playerPot = mint(videoId)
-        val response = playerResponse(videoId, s.visitorData, playerPot, p.signatureTimestamp)
 
-        val status = response.optJSONObject("playabilityStatus")
-        if (status?.optString("status") != "OK") {
-            throw IOException("YouTube Music: ${status?.optString("status")} ${status?.optString("reason").orEmpty()}".trim())
+        // Signed in first: that's how YouTube Music plays it for this user. Then anonymous.
+        val creds = credentials()?.takeIf { it.sapisid != null }
+        val problems = mutableListOf<String>()
+        var response: JSONObject? = null
+        var binding = s.visitorData
+        if (creds != null) {
+            val signedIn = runCatching { playerResponse(videoId, s.visitorData, playerPot, p.signatureTimestamp, creds) }
+            val r = signedIn.getOrNull()
+            if (r != null && playable(r)) {
+                response = r
+                // Signed-in streams are bound to the account session, as on music.youtube.com.
+                binding = r.optJSONObject("responseContext")?.optJSONObject("mainAppWebResponseContext")
+                    ?.optString("datasyncId")?.takeIf { it.isNotEmpty() } ?: s.visitorData
+            } else {
+                problems += "signed in: " + (r?.let(::unplayable) ?: signedIn.exceptionOrNull()?.message.orEmpty())
+            }
         }
+        if (response == null) {
+            val r = playerResponse(videoId, s.visitorData, playerPot, p.signatureTimestamp, null)
+            if (playable(r)) response = r else problems += (if (creds != null) "anonymous: " else "") + unplayable(r)
+        }
+        if (response == null) throw Unplayable("YouTube Music: " + problems.joinToString("; "))
         val formats = response.optJSONObject("streamingData")?.optJSONArray("adaptiveFormats") ?: JSONArray()
         val audio = (0 until formats.length()).map { formats.getJSONObject(it) }
             .filter { it.optString("mimeType").startsWith("audio/") }
@@ -75,8 +107,16 @@ class WebMusicStreams(private val http: OkHttpClient, private val engine: WebEng
             plain.filter { kbps(it) in 1..NORMAL_MAX_KBPS }.maxByOrNull(::kbps) ?: plain.minBy(::kbps)
         }
 
-        val url = solve(chosen) + "&pot=" + Uri.encode(s.streamingPot)
+        val pot = if (binding == s.visitorData) s.streamingPot else streamingPots.getOrPut(binding) { mint(binding) }
+        val url = solve(chosen) + "&pot=" + Uri.encode(pot)
         return Stream(url, mapOf("User-Agent" to WebEngine.USER_AGENT, "Origin" to MUSIC, "Referer" to "$MUSIC/"))
+    }
+
+    private fun playable(r: JSONObject) = r.optJSONObject("playabilityStatus")?.optString("status") == "OK"
+
+    private fun unplayable(r: JSONObject): String {
+        val status = r.optJSONObject("playabilityStatus")
+        return "${status?.optString("status")} ${status?.optString("reason").orEmpty()}".trim()
     }
 
     // region Tokens
@@ -223,23 +263,34 @@ class WebMusicStreams(private val http: OkHttpClient, private val engine: WebEng
 
     // endregion
 
-    private fun playerResponse(videoId: String, visitorData: String, poToken: String, sts: Int): JSONObject {
+    private fun playerResponse(videoId: String, visitorData: String, poToken: String, sts: Int, creds: Credentials?): JSONObject {
         val version = runCatching { YoutubeParsingHelper.getYoutubeMusicClientVersion() }.getOrDefault(MUSIC_VERSION)
         val body = JSONObject()
             .put("context", JSONObject().put("client", JSONObject()
                 .put("clientName", "WEB_REMIX").put("clientVersion", version)
-                .put("hl", "en").put("gl", "US").put("visitorData", visitorData)))
+                .put("hl", "en").put("gl", "US")
+                // Signed in, the account's own session identifies the client; don't mix in the anonymous visitor.
+                .apply { if (creds == null) put("visitorData", visitorData) }))
             .put("videoId", videoId)
             .put("contentCheckOk", true)
             .put("racyCheckOk", true)
             .put("playbackContext", JSONObject().put("contentPlaybackContext", JSONObject().put("signatureTimestamp", sts)))
             .put("serviceIntegrityDimensions", JSONObject().put("poToken", poToken))
-        return postJson("$MUSIC/youtubei/v1/player?prettyPrint=false", body, mapOf(
-            "X-Goog-Visitor-Id" to visitorData,
+        val headers = mutableMapOf(
             "Origin" to MUSIC,
             "X-Youtube-Client-Name" to "67",
             "X-Youtube-Client-Version" to version,
-        ))
+        )
+        if (creds == null) headers["X-Goog-Visitor-Id"] = visitorData
+        if (creds != null) {
+            // Signed the way Lull's InnerTube client signs library requests.
+            headers["Cookie"] = creds.cookie
+            creds.authorization(MUSIC)?.let { headers["Authorization"] = it }
+            headers["X-Goog-AuthUser"] = "0"
+            headers["X-Origin"] = MUSIC
+            headers["Referer"] = "$MUSIC/"
+        }
+        return postJson("$MUSIC/youtubei/v1/player?prettyPrint=false", body, headers)
     }
 
     private fun postJson(url: String, body: JSONObject, headers: Map<String, String>): JSONObject {

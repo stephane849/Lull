@@ -59,7 +59,10 @@ object AppGraph {
         recentSeries = RecentSeries(context)
         savedLocally = SavedLocally(context)
         repo = Repository(InnerTube(http) { credentials.cookie()?.let(::Credentials) })
-        resolver = StreamResolver(context, settings, WebMusicStreams(http, WebEngine(context)))
+        resolver = StreamResolver(
+            context, settings,
+            WebMusicStreams(http, WebEngine(context)) { credentials.cookie()?.let(::Credentials) },
+        )
 
         val database = StandaloneDatabaseProvider(context)
         downloadCache = SimpleCache(File(context.filesDir, "downloads"), NoOpCacheEvictor(), database)
