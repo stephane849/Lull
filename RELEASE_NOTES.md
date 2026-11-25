@@ -1,12 +1,13 @@
 A calm, text-only YouTube Music client for E Ink phones, built for the Mudita Kompakt.
 
-**Install:** download `Lull-v1.0.9.apk` below and open it on your phone; it installs over earlier versions. Or add `https://github.com/stephane849/Lull` in Obtainium.
+**Install:** download `Lull-v1.0.10.apk` below and open it on your phone; it installs over earlier versions. Or add `https://github.com/stephane849/Lull` in Obtainium.
 
-### What's new in 1.0.9
-- **Songs play again (for real this time):** YouTube started refusing the audio links Lull used, so most songs said "Couldn't play this". Lull now gets audio the way YouTube Music's website does. The first song after opening Lull can take a few seconds longer to start.
+### What's new in 1.0.10
+- **Fix for songs stuck at Loading:** 1.0.9's new way of getting audio got stuck on every song; this fixes the cause. If a song still can't play, Lull now says why (YouTube refused the audio, no audio link, or no connection).
+- **How audio is found:** Lull gets audio the way YouTube Music's website does, since YouTube started refusing the links Lull used before. The first song after opening Lull can take a few seconds longer to start.
 
-### Also recent (1.0.8)
-- Updated the stream lookup library (wasn't enough on its own).
+### Earlier (1.0.8)
+- Updated the stream lookup library.
 
 ### Earlier (1.0.7)
 - **Playlists fixed:** your own playlists no longer fill up with YouTube Music's suggested songs.
