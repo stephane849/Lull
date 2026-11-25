@@ -88,7 +88,7 @@ dependencies {
     implementation("androidx.media3:media3-database:$media3")
 
     // Stream URL resolution (signature deciphering is the fragile part; keep this updated)
-    implementation("com.github.teamnewpipe:NewPipeExtractor:v0.26.5")
+    implementation("com.github.teamnewpipe:NewPipeExtractor:v0.27.1")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.5")
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
